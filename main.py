@@ -63,7 +63,7 @@ ARCHITECT_INSTRUCTION = (
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm gọi Gemini với model gemini-3.6-flash
+# Hàm gọi Gemini trực tiếp an toàn, không bị treo luồng
 async def call_gemini(contents, config):
     model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
@@ -71,18 +71,14 @@ async def call_gemini(contents, config):
     for attempt in range(max_attempts):
         try:
             ai_client = get_next_ai_client()
-            response = await bot.loop.run_in_executor(
-                None,
-                lambda: ai_client.models.generate_content(
-                    model=model_name,
-                    contents=contents,
-                    config=config
-                )
+            # Gọi trực tiếp qua client chuẩn không qua executor để tránh kẹt luồng asyncio
+            response = ai_client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config
             )
             if response and hasattr(response, 'text') and response.text:
                 return response.text.strip()
-            else:
-                print(f"CẢNH BÁO: Phản hồi từ API trả về rỗng hoặc không có thuộc tính text.")
         except Exception as e:
             err_msg = str(e)
             print(f"CHI TIẾT LỖI GEMINI API (3.6): {e}")
@@ -160,14 +156,9 @@ async def code_architect(ctx, *, prompt: str):
         full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        try:
-            result_text = await call_gemini(full_prompt, config)
-            if result_text:
-                await ctx.send(result_text)
-            else:
-                print("Lệnh code trả về giá trị None (phản hồi trống từ mô hình).")
-        except Exception as err:
-            print(f"Lỗi thực thi lệnh code: {err}")
+        result_text = await call_gemini(full_prompt, config)
+        if result_text:
+            await ctx.send(result_text)
 
 # ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
@@ -200,14 +191,9 @@ async def chat_architect(ctx, *, prompt: str = ""):
 
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        try:
-            result_text = await call_gemini(contents, config)
-            if result_text:
-                await ctx.send(result_text)
-            else:
-                print("Lệnh chat trả về giá trị None (phản hồi trống từ mô hình).")
-        except Exception as err:
-            print(f"Lỗi thực thi lệnh chat: {err}")
+        result_text = await call_gemini(contents, config)
+        if result_text:
+            await ctx.send(result_text)
 
 # ================= 8. KHI BOT SẴN SÀNG =================
 @bot.event
