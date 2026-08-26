@@ -63,7 +63,7 @@ ARCHITECT_INSTRUCTION = (
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm gọi Gemini với model gemini-3.6-flash và cơ chế log lỗi chi tiết ra console
+# Hàm gọi Gemini với model gemini-3.6-flash, loại bỏ phản hồi fallback khi lỗi
 async def call_gemini(contents, config):
     model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
@@ -162,8 +162,6 @@ async def code_architect(ctx, *, prompt: str):
         
         if result_text:
             await ctx.send(result_text)
-        else:
-            await ctx.send("Khối mã nguồn đã tan biến vào cõi hư vô do giới hạn hạn ngạch.")
 
 # ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
@@ -200,8 +198,6 @@ async def chat_architect(ctx, *, prompt: str = ""):
         
         if result_text:
             await ctx.send(result_text)
-        else:
-            await ctx.send("Tín hiệu tiến hóa đang gặp gián đoạn tạm thời.")
 
 # ================= 8. KHI BOT SẴN SÀNG =================
 @bot.event
