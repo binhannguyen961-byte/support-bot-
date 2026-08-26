@@ -54,20 +54,46 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT =================
+# ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT (FUSHI + BẠN) =================
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Cực kỳ bình tĩnh, điềm đạm, luôn tỏ ra mọi thứ là bình thường, kết hợp với tích cách ngây ngô nhưng sắc bén của Fushi(to your enternity). "
-    "Thái độ: Thản nhiên đối mặt với mọi hỗn loạn, không hề hoảng hốt, nói chuyện ngắn gọn, sắc bén, mang phong thái của một kẻ kiến tạo thế giới lạnh lùng, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững chất giọng điềm tĩnh đến rợn ngợp. Tuyệt đối không chào hỏi hay giải thích dài dòng."
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử và thấu thấu cảm của Fushi (trong To Your Eternity). "
+    "Thái độ: Lặng lẽ chứng kiến mọi biến động với một sự thản nhiên tuyệt đối, không gắt gỏng, không vội vã, luôn tỏ ra mọi thứ là bình thường và nằm trong chuỗi tiến hóa, tuyệt đối không dùng dấu chấm cảm (!). "
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
+
+# Hàm hỗ trợ gọi AI thông minh: Fallback tự động từ 3.6 sang 2.5 khi lỗi
+async def call_gemini_with_fallback(contents, config):
+    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash"]
+    max_attempts = len(API_KEYS) if API_KEYS else 1
+
+    for model_name in models_to_try:
+        for attempt in range(max_attempts):
+            try:
+                ai_client = get_next_ai_client()
+                response = await bot.loop.run_in_executor(
+                    None,
+                    lambda: ai_client.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=config
+                    )
+                )
+                if response and hasattr(response, 'text') and response.text:
+                    return response.text.strip()
+            except Exception as e:
+                err_msg = str(e)
+                if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and attempt < max_attempts - 1:
+                    continue
+                break
+    return None
 
 # ================= 4. LỆNH HELP =================
 @bot.command(name="helps")
 async def custom_help(ctx):
     embed = discord.Embed(
-        title="⚡ True Architect - Kiến Tạo Thực Tại",
-        description="Mọi phản hồi từ hệ thống đều điềm tĩnh, chuẩn xác và đúng 1 câu.",
+        title="⚡ True Architect - Tiến Hóa & Kiến Tạo",
+        description="Mọi phản hồi từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
         color=discord.Color.from_rgb(30, 30, 30)
     )
     embed.add_field(
@@ -86,17 +112,16 @@ async def custom_help(ctx):
 @bot.command(name="warn")
 @commands.has_permissions(manage_messages=True)
 async def warn_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
-    await ctx.send(f"Đã ghi nhận sự lệch chuẩn của {member.mention} với lý do: {reason}, mọi thứ vẫn trong tầm kiểm soát.")
+    await ctx.send(f"Đã ghi nhận sự lệch nhịp của {member.mention} với lý do: {reason}, mọi thứ vẫn tiếp diễn bình thường.")
 
 @warn_member.error
 async def warn_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("Bạn không có quyền kiến tạo sự trừng phạt này.")
+        await ctx.send("Bạn không có sự thấu cảm đủ lớn để đưa ra cảnh cáo này.")
 
 @bot.command(name="mute")
 @commands.has_permissions(manage_roles=True)
 async def mute_member(ctx, member: discord.Member):
-    # Tìm hoặc tạo role Muted đơn giản
     muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not muted_role:
         try:
@@ -108,9 +133,9 @@ async def mute_member(ctx, member: discord.Member):
     
     if muted_role:
         await member.add_roles(muted_role)
-        await ctx.send(f"Đã đưa {member.mention} vào không gian tĩnh lặng vĩnh viễn.")
+        await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng vĩnh hằng.")
     else:
-        await ctx.send("Không thể thiết lập trạng thái câm lặng cho thực thể này.")
+        await ctx.send("Không thể định hình trạng thái câm lặng cho thực thể này.")
 
 @mute_member.error
 async def mute_error(ctx, error):
@@ -124,30 +149,12 @@ async def code_architect(ctx, *, prompt: str):
         full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        max_attempts = len(API_KEYS)
-        for attempt in range(max_attempts):
-            try:
-                ai_client = get_next_ai_client()
-                response = await bot.loop.run_in_executor(
-                    None,
-                    lambda: ai_client.models.generate_content(
-                        model="gemini-3.6-flash",
-                        contents=full_prompt,
-                        config=config
-                    )
-                )
-
-                if response and hasattr(response, 'text') and response.text:
-                    return await ctx.send(response.text.strip())
-                else:
-                    return await ctx.send("Khối mã nguồn đã sụp đổ vào không gian vô định.")
-
-            except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                    if attempt < max_attempts - 1:
-                        continue
-                return await ctx.send("⚠️ Hết hạn ngạch API Keys, hãy tĩnh tâm đợi 1 phút.")
+        result_text = await call_gemini_with_fallback(full_prompt, config)
+        
+        if result_text:
+            await ctx.send(result_text)
+        else:
+            await ctx.send("Khối mã nguồn đã tan biến vào cõi hư vô.")
 
 # ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
@@ -171,39 +178,21 @@ async def chat_architect(ctx, *, prompt: str = ""):
             contents.append(image_part)
         
         if not prompt and image_part:
-            prompt = "Phân tích bức ảnh này dưới góc nhìn bình tĩnh và thực tại."
+            prompt = "Quan sát bức ảnh này dưới góc nhìn điềm tĩnh và thấu đáo."
         elif prompt:
             contents.append(prompt)
 
         if not contents:
-            return await ctx.send("Thực tại trống rỗng, hãy đưa tôi một đầu vào cụ thể.")
+            return await ctx.send("Thực tại trống rỗng, hãy cung cấp cho tôi một hình hài cụ thể.")
 
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        max_attempts = len(API_KEYS)
-        for attempt in range(max_attempts):
-            try:
-                ai_client = get_next_ai_client()
-                response = await bot.loop.run_in_executor(
-                    None,
-                    lambda: ai_client.models.generate_content(
-                        model="gemini-3.6-flash",
-                        contents=contents,
-                        config=config
-                    )
-                )
-
-                if response and hasattr(response, 'text') and response.text:
-                    return await ctx.send(response.text.strip())
-                else:
-                    return await ctx.send("Tín hiệu từ thực tại đã bị nhiễu động.")
-
-            except Exception as e:
-                err_msg = str(e)
-                if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                    if attempt < max_attempts - 1:
-                        continue
-                return await ctx.send("⚠️ Hết hạn ngạch API Keys, hãy tĩnh tâm đợi 1 phút.")
+        result_text = await call_gemini_with_fallback(contents, config)
+        
+        if result_text:
+            await ctx.send(result_text)
+        else:
+            await ctx.send("Tín hiệu tiến hóa đang gặp gián đoạn tạm thời.")
 
 # ================= 8. KHI BOT SẴN SÀNG =================
 @bot.event
