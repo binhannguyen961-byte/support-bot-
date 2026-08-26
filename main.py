@@ -58,37 +58,49 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 # ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT =================
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử và thấu cảm của Fushi (trong To Your Eternity). "
-    "Thái độ: Lặng lẽ chứng kiến mọi biến động với một sự thản nhiên tuyệt đối, không gắt gỏng, không vội vã, luôn tỏ ra mọi thứ là bình thường và nằm trong chuỗi tiến hóa, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử."
+    "Thái độ: Lặng lẽ chứng kiến mọi biến động với một sự thản nhiên tuyệt đối, không gắt gỏng, không vội vã, luôn tỏ ra mọi thứ là bình thường."
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh."
 )
 
-# Hàm gọi Gemini sử dụng AIO Async chuẩn của SDK để không làm treo bot
+# ================= 4. HÀM CALL GEMINI VỚI TIMEOUT & XỬ LÝ LỖI =================
 async def call_gemini(contents, config):
-    model_name = "gemini-3.6-flash"
+    """Gọi Gemini API với timeout, retry logic và xử lý lỗi"""
+    model_name = "gemini-3.6-flash"  # ✅ Model 3.6
     max_attempts = len(API_KEYS) if API_KEYS else 1
+    timeout = 30  # Timeout 30 giây
 
     for attempt in range(max_attempts):
         try:
             ai_client = get_next_ai_client()
-            # Sử dụng .aio để gọi bất đồng bộ chính thống
-            response = await ai_client.aio.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config
+            response = await asyncio.wait_for(
+                ai_client.aio.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=config
+                ),
+                timeout=timeout
             )
             if response and hasattr(response, 'text') and response.text:
                 return response.text.strip()
+        except asyncio.TimeoutError:
+            print(f"⏱️ TIMEOUT tại attempt {attempt + 1}/{max_attempts}")
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(2)
+                continue
+            return "⚠️ API timeout - yêu cầu quá lâu, vui lòng th�� lại."
         except Exception as e:
             err_msg = str(e)
-            print(f"CHI TIẾT LỖI GEMINI API (3.6): {e}")
+            print(f"❌ LỖI GEMINI API: {e}")
             if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and attempt < max_attempts - 1:
+                await asyncio.sleep(2)  # Chờ 2 giây trước retry
                 continue
-            else:
-                break
-    return None
+            if attempt == max_attempts - 1:
+                return f"❌ Lỗi API: {err_msg[:100]}"
+    
+    return "❌ Không thể kết nối đến AI sau tất cả các lần thử."
 
-# ================= 4. LỆNH HELP =================
+# ================= 5. LỆNH HELP =================
 @bot.command(name="helps")
 async def custom_help(ctx):
     embed = discord.Embed(
@@ -108,7 +120,7 @@ async def custom_help(ctx):
     )
     await ctx.send(embed=embed)
 
-# ================= 5. CÁC LỆNH QUẢN LÝ SERVER =================
+# ================= 6. CÁC LỆNH QUẢN LÝ SERVER =================
 @bot.command(name="warn")
 @commands.has_permissions(manage_messages=True)
 async def warn_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
@@ -149,53 +161,63 @@ async def mute_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Thời gian mute phải là một con số nguyên hợp lệ.")
 
-# ================= 6. LỆNH TẠO CODE PYTHON (!code) =================
+# ================= 7. LỆNH TẠO CODE PYTHON (!code) =================
 @bot.command(name="code")
 async def code_architect(ctx, *, prompt: str):
     async with ctx.typing():
-        full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
-        config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
-        
-        result_text = await call_gemini(full_prompt, config)
-        if result_text:
-            await ctx.send(result_text)
+        try:
+            full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
+            config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
+            
+            result_text = await call_gemini(full_prompt, config)
+            if result_text:
+                await ctx.send(result_text)
+            else:
+                await ctx.send("❌ Không nhận được phản hồi từ AI.")
+        except Exception as e:
+            await ctx.send(f"❌ Lỗi: {str(e)[:100]}")
 
-# ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
+# ================= 8. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
 async def chat_architect(ctx, *, prompt: str = ""):
     async with ctx.typing():
-        image_part = None
-        if ctx.message.attachments:
-            attachment = ctx.message.attachments[0]
-            if attachment.content_type and attachment.content_type.startswith("image/"):
-                try:
-                    image_bytes = await attachment.read()
-                    image_part = types.Part.from_bytes(
-                        data=image_bytes,
-                        mime_type=attachment.content_type
-                    )
-                except Exception as e:
-                    print(f"Lỗi tải ảnh: {e}")
+        try:
+            image_part = None
+            if ctx.message.attachments:
+                attachment = ctx.message.attachments[0]
+                if attachment.content_type and attachment.content_type.startswith("image/"):
+                    try:
+                        image_bytes = await attachment.read()
+                        image_part = types.Part.from_bytes(
+                            data=image_bytes,
+                            mime_type=attachment.content_type
+                        )
+                    except Exception as e:
+                        print(f"Lỗi tải ảnh: {e}")
 
-        contents = []
-        if image_part:
-            contents.append(image_part)
-        
-        if not prompt and image_part:
-            prompt = "Quan sát bức ảnh này dưới góc nhìn điềm tĩnh và thấu đáo."
-        elif prompt:
-            contents.append(prompt)
+            contents = []
+            if image_part:
+                contents.append(image_part)
+            
+            if not prompt and image_part:
+                prompt = "Quan sát bức ảnh này dưới góc nhìn điềm tĩnh và thấu đáo."
+            elif prompt:
+                contents.append(prompt)
 
-        if not contents:
-            return await ctx.send("Thực tại trống rỗng, hãy cung cấp cho tôi một hình hài cụ thể.")
+            if not contents:
+                return await ctx.send("Thực tại trống rỗng, hãy cung cấp cho tôi một hình hài cụ thể.")
 
-        config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
-        
-        result_text = await call_gemini(contents, config)
-        if result_text:
-            await ctx.send(result_text)
+            config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
+            
+            result_text = await call_gemini(contents, config)
+            if result_text:
+                await ctx.send(result_text)
+            else:
+                await ctx.send("❌ Không nhận được phản hồi từ AI.")
+        except Exception as e:
+            await ctx.send(f"❌ Lỗi: {str(e)[:100]}")
 
-# ================= 8. KHI BOT SẴN SÀNG =================
+# ================= 9. KHI BOT SẴN SÀNG =================
 @bot.event
 async def on_ready():
     print(f"✅ Bot true architect✅ đã trực tuyến: {bot.user.name}")
