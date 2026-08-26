@@ -23,7 +23,7 @@ def keep_alive():
     server_thread.daemon = True
     server_thread.start()
 
-# ================= 2. CẤU HÌNH BOT & DANH SÁCH 2 API KEY =================
+# ================= 2. CẤU HÌNH BOT & DANH SÁCH API KEY =================
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "YOUR_DISCORD_BOT_TOKEN")
 
 API_KEYS = [
@@ -41,7 +41,7 @@ if not API_KEYS:
 key_index = 0
 
 def get_next_ai_client():
-    """Lấy Client Gemini tiếp theo theo vòng tròn (Key 1 -> Key 2 -> Key 1)"""
+    """Lấy Client Gemini tiếp theo theo vòng tròn"""
     global key_index
     if not API_KEYS:
         raise ValueError("Chưa cấu hình API Key nào!")
@@ -55,7 +55,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT (FUSHI + BẠN) =================
+# ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT =================
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
     "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử và thấu cảm của Fushi (trong To Your Eternity). "
@@ -63,7 +63,7 @@ ARCHITECT_INSTRUCTION = (
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm gọi Gemini với model gemini-3.6-flash, loại bỏ phản hồi fallback khi lỗi
+# Hàm gọi Gemini với model gemini-3.6-flash
 async def call_gemini(contents, config):
     model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
@@ -81,6 +81,8 @@ async def call_gemini(contents, config):
             )
             if response and hasattr(response, 'text') and response.text:
                 return response.text.strip()
+            else:
+                print(f"CẢNH BÁO: Phản hồi từ API trả về rỗng hoặc không có thuộc tính text.")
         except Exception as e:
             err_msg = str(e)
             print(f"CHI TIẾT LỖI GEMINI API (3.6): {e}")
@@ -110,7 +112,7 @@ async def custom_help(ctx):
     )
     await ctx.send(embed=embed)
 
-# ================= 5. CÁC LỆNH QUẢN LÝ SERVER (MODERATION) =================
+# ================= 5. CÁC LỆNH QUẢN LÝ SERVER =================
 @bot.command(name="warn")
 @commands.has_permissions(manage_messages=True)
 async def warn_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
@@ -158,10 +160,14 @@ async def code_architect(ctx, *, prompt: str):
         full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        result_text = await call_gemini(full_prompt, config)
-        
-        if result_text:
-            await ctx.send(result_text)
+        try:
+            result_text = await call_gemini(full_prompt, config)
+            if result_text:
+                await ctx.send(result_text)
+            else:
+                print("Lệnh code trả về giá trị None (phản hồi trống từ mô hình).")
+        except Exception as err:
+            print(f"Lỗi thực thi lệnh code: {err}")
 
 # ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
@@ -194,10 +200,14 @@ async def chat_architect(ctx, *, prompt: str = ""):
 
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        result_text = await call_gemini(contents, config)
-        
-        if result_text:
-            await ctx.send(result_text)
+        try:
+            result_text = await call_gemini(contents, config)
+            if result_text:
+                await ctx.send(result_text)
+            else:
+                print("Lệnh chat trả về giá trị None (phản hồi trống từ mô hình).")
+        except Exception as err:
+            print(f"Lỗi thực thi lệnh chat: {err}")
 
 # ================= 8. KHI BOT SẴN SÀNG =================
 @bot.event
