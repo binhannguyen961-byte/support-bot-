@@ -63,7 +63,7 @@ ARCHITECT_INSTRUCTION = (
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm gọi Gemini trực tiếp với model gemini-3.6-flash và xoay vòng Key khi gặp lỗi 429
+# Hàm gọi Gemini với model gemini-3.6-flash và cơ chế log lỗi chi tiết ra console
 async def call_gemini(contents, config):
     model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
@@ -83,10 +83,10 @@ async def call_gemini(contents, config):
                 return response.text.strip()
         except Exception as e:
             err_msg = str(e)
+            print(f"CHI TIẾT LỖI GEMINI API (3.6): {e}")
             if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and attempt < max_attempts - 1:
                 continue
             else:
-                print(f"Lỗi gọi Gemini API: {e}")
                 break
     return None
 
@@ -137,7 +137,6 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
         await member.add_roles(muted_role)
         await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng trong {minutes} phút.")
         
-        # Tự động gỡ mute sau khoảng thời gian chỉ định
         await asyncio.sleep(minutes * 60)
         if muted_role in member.roles:
             await member.remove_roles(muted_role)
