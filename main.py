@@ -1,5 +1,6 @@
 import os
 import threading
+import asyncio
 import discord
 from discord.ext import commands
 from flask import Flask
@@ -57,34 +58,35 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 # ================= 3. THIẾT LẬP NHÂN VẬT TRUE ARCHITECT (FUSHI + BẠN) =================
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử và thấu thấu cảm của Fushi (trong To Your Eternity). "
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên của chính bạn và góc nhìn từng trải, quan sát vạn vật sâu sắc, đôi chút bất tử và thấu cảm của Fushi (trong To Your Eternity). "
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với một sự thản nhiên tuyệt đối, không gắt gỏng, không vội vã, luôn tỏ ra mọi thứ là bình thường và nằm trong chuỗi tiến hóa, tuyệt đối không dùng dấu chấm cảm (!). "
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm hỗ trợ gọi AI thông minh: Fallback tự động từ 3.6 sang 2.5 khi lỗi
-async def call_gemini_with_fallback(contents, config):
-    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash"]
+# Hàm gọi Gemini trực tiếp với model gemini-3.6-flash và xoay vòng Key khi gặp lỗi 429
+async def call_gemini(contents, config):
+    model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
 
-    for model_name in models_to_try:
-        for attempt in range(max_attempts):
-            try:
-                ai_client = get_next_ai_client()
-                response = await bot.loop.run_in_executor(
-                    None,
-                    lambda: ai_client.models.generate_content(
-                        model=model_name,
-                        contents=contents,
-                        config=config
-                    )
+    for attempt in range(max_attempts):
+        try:
+            ai_client = get_next_ai_client()
+            response = await bot.loop.run_in_executor(
+                None,
+                lambda: ai_client.models.generate_content(
+                    model=model_name,
+                    contents=contents,
+                    config=config
                 )
-                if response and hasattr(response, 'text') and response.text:
-                    return response.text.strip()
-            except Exception as e:
-                err_msg = str(e)
-                if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and attempt < max_attempts - 1:
-                    continue
+            )
+            if response and hasattr(response, 'text') and response.text:
+                return response.text.strip()
+        except Exception as e:
+            err_msg = str(e)
+            if ("429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg) and attempt < max_attempts - 1:
+                continue
+            else:
+                print(f"Lỗi gọi Gemini API: {e}")
                 break
     return None
 
@@ -102,7 +104,7 @@ async def custom_help(ctx):
             "`!chat [nội dung/gửi kèm ảnh]` - Trò chuyện hoặc phân tích hình ảnh.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên vi phạm.\n"
-            "`!mute @user` - Lặng câm một thực thể trong server."
+            "`!mute @user [phút]` - Lặng câm một thực thể trong khoảng thời gian định sẵn."
         ),
         inline=False
     )
@@ -121,7 +123,7 @@ async def warn_error(ctx, error):
 
 @bot.command(name="mute")
 @commands.has_permissions(manage_roles=True)
-async def mute_member(ctx, member: discord.Member):
+async def mute_member(ctx, member: discord.Member, minutes: int = 5):
     muted_role = discord.utils.get(ctx.guild.roles, name="Muted")
     if not muted_role:
         try:
@@ -133,7 +135,13 @@ async def mute_member(ctx, member: discord.Member):
     
     if muted_role:
         await member.add_roles(muted_role)
-        await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng vĩnh hằng.")
+        await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng trong {minutes} phút.")
+        
+        # Tự động gỡ mute sau khoảng thời gian chỉ định
+        await asyncio.sleep(minutes * 60)
+        if muted_role in member.roles:
+            await member.remove_roles(muted_role)
+            await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, chu kỳ tĩnh lặng đã kết thúc.")
     else:
         await ctx.send("Không thể định hình trạng thái câm lặng cho thực thể này.")
 
@@ -141,6 +149,8 @@ async def mute_member(ctx, member: discord.Member):
 async def mute_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
         await ctx.send("Quyền hạn của bạn chưa đủ để phong ấn thực thể này.")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("Thời gian mute phải là một con số nguyên hợp lệ.")
 
 # ================= 6. LỆNH TẠO CODE PYTHON (!code) =================
 @bot.command(name="code")
@@ -149,12 +159,12 @@ async def code_architect(ctx, *, prompt: str):
         full_prompt = f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        result_text = await call_gemini_with_fallback(full_prompt, config)
+        result_text = await call_gemini(full_prompt, config)
         
         if result_text:
             await ctx.send(result_text)
         else:
-            await ctx.send("Khối mã nguồn đã tan biến vào cõi hư vô.")
+            await ctx.send("Khối mã nguồn đã tan biến vào cõi hư vô do giới hạn hạn ngạch.")
 
 # ================= 7. LỆNH TRÒ CHUYỆN & ĐỌC ẢNH (!chat) =================
 @bot.command(name="chat")
@@ -187,7 +197,7 @@ async def chat_architect(ctx, *, prompt: str = ""):
 
         config = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION)
         
-        result_text = await call_gemini_with_fallback(contents, config)
+        result_text = await call_gemini(contents, config)
         
         if result_text:
             await ctx.send(result_text)
