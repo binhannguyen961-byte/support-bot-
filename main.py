@@ -63,7 +63,7 @@ ARCHITECT_INSTRUCTION = (
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề (code, phân tích ảnh, trò chuyện) vừa giữ vững phong thái điềm tĩnh, trường tồn. Tuyệt đối không chào hỏi hay giải thích dài dòng."
 )
 
-# Hàm gọi Gemini trực tiếp an toàn, không bị treo luồng
+# Hàm gọi Gemini sử dụng AIO Async chuẩn của SDK để không làm treo bot
 async def call_gemini(contents, config):
     model_name = "gemini-3.6-flash"
     max_attempts = len(API_KEYS) if API_KEYS else 1
@@ -71,8 +71,8 @@ async def call_gemini(contents, config):
     for attempt in range(max_attempts):
         try:
             ai_client = get_next_ai_client()
-            # Gọi trực tiếp qua client chuẩn không qua executor để tránh kẹt luồng asyncio
-            response = ai_client.models.generate_content(
+            # Sử dụng .aio để gọi bất đồng bộ chính thống
+            response = await ai_client.aio.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=config
