@@ -7,6 +7,7 @@ from discord.ext import commands
 from flask import Flask
 from google import genai
 from google.genai import types
+from google.cloud import texttospeech
 
 # -------------------- CẤU HÌNH & LOGGING --------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -48,10 +49,41 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một ng[...]
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một người anh em được tin cậy. "
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với sự thản nhiên tuyệt đối, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đưa [...]
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đưa giải pháp."
 )
+
+# -------------------- HÀM TEXT-TO-SPEECH --------------------
+async def text_to_speech(text: str, output_file: str = "voice_output.mp3"):
+    """Chuyển văn bản thành âm thanh bằng Google Cloud TTS"""
+    try:
+        client = texttospeech.TextToSpeechClient()
+        
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="vi-VN",  # Tiếng Việt
+            name="vi-VN-Neural2-A"  # Giọng nữ Natural
+        )
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            speaking_rate=1.0
+        )
+        
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config
+        )
+        
+        # Lưu file âm thanh
+        with open(output_file, "wb") as out:
+            out.write(response.audio_content)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Lỗi TTS: {e}")
+        return False
 
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
 async def call_gemini(contents):
@@ -59,7 +91,7 @@ async def call_gemini(contents):
         return "Chưa cấu hình API Key nào trong hệ thống."
     
     cfg = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION, temperature=0.2)
-    model_name = "gemini-3.6-flash"
+    model_name = "gemini-2.0-flash"
     
     # Thử lần lượt các key trong danh sách nếu gặp lỗi quá tải
     for _ in range(len(API_KEYS)):
@@ -79,7 +111,7 @@ async def call_gemini(contents):
 async def custom_help(ctx):
     embed = discord.Embed(
         title="⚡ True Architect - Tiến Hóa & Kiến Tạo",
-        description="Mọi phản h~~i từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
+        description="Mọi phản hồi từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
         color=discord.Color.from_rgb(30, 30, 30)
     )
     embed.add_field(
@@ -145,7 +177,7 @@ async def code_architect(ctx, *, prompt: str):
 @bot.command(name="Rimg")
 async def generate_image(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI im[...]
+        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI image generation tool."])
         if result:
             embed = discord.Embed(
                 title="🎨 Ảnh được tạo",
@@ -159,7 +191,7 @@ async def generate_image(ctx, *, prompt: str):
 @bot.command(name="Rsong")
 async def generate_song(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu s~[...]
+        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu sắc."])
         if result:
             embed = discord.Embed(
                 title="🎵 Bài hát được tạo",
@@ -199,7 +231,7 @@ async def chat_architect(ctx, *, prompt: str = ""):
 
 @bot.command(name="Ttalks")
 async def speak_in_voice(ctx, *, content: str):
-    """Bot phát nội dung qua voice chat"""
+    """Bot phát nội dung qua voice chat với TTS"""
     # Kiểm tra xem user có kết nối voice không
     if not ctx.author.voice:
         await ctx.send("Cậu phải ở trong một voice channel để tôi có thể nói chuyện.")
@@ -216,28 +248,28 @@ async def speak_in_voice(ctx, *, content: str):
         return
     
     try:
-        # Tạo file âm thanh tạm thời từ nội dung
-        tts_prompt = f"Hãy chuyển đổi nội dung sau thành văn bản rõ ràng: {content}"
-        tts_result = await call_gemini([tts_prompt])
-        
-        # Lưu lời nói dự định
-        await ctx.send(f"🎤 Tôi sẽ nói: {tts_result}")
-        
-        # Ghi chú: Để phát âm thanh thực tế, bạn cần thêm library như pyttsx3 hoặc gọi TTS API
-        # Ví dụ sử dụng pyttsx3:
-        # import pyttsx3
-        # engine = pyttsx3.init()
-        # engine.save_to_file(tts_result, 'voice_output.mp3')
-        # engine.runAndWait()
-        # source = discord.FFmpegPCMAudio('voice_output.mp3')
-        # voice_client.play(source)
+        async with ctx.typing():
+            # Chuyển đổi text sang speech
+            success = await text_to_speech(content, "voice_output.mp3")
+            
+            if success:
+                # Phát âm thanh qua voice channel
+                source = discord.FFmpegPCMAudio("voice_output.mp3")
+                voice_client.play(source)
+                
+                await ctx.send(f"🎤 Đang phát: {content[:100]}")
+                
+                # Đợi cho đến khi hết phát
+                while voice_client.is_playing():
+                    await asyncio.sleep(0.1)
+            else:
+                await ctx.send("Không thể tạo âm thanh, vui lòng kiểm tra cấu hình TTS.")
         
     except Exception as e:
         logger.error(f"Lỗi phát âm: {e}")
         await ctx.send("Có lỗi xảy ra khi chuẩn bị phát âm thanh.")
     finally:
-        # Ngắt kết nối sau khi phát xong (hoặc sau một khoảng thời gian)
-        await asyncio.sleep(2)
+        # Ngắt kết nối
         if voice_client.is_connected():
             await voice_client.disconnect()
 
