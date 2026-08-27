@@ -48,9 +48,9 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân "
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một ngôi sao lặng im. "
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với sự thản nhiên tuyệt đối, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh,nhưng phải hỗ trợ và đưa ra gợi ý hoặc THÔNG TIN CÓ ÍCH HOẶC DỄ HIỂU cho người dùng,không chào hỏi dài dòng."
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đưa ra giải pháp rõ ràng."
 )
 
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
@@ -75,11 +75,11 @@ async def call_gemini(contents):
     return "Tất cả các API key đều đã cạn kiệt hạn ngạch hoặc gặp lỗi."
 
 # -------------------- CÁC LỆNH HỆ THỐNG --------------------
-@bot.command(name="helps")
+@bot.command(name="Thelps")
 async def custom_help(ctx):
     embed = discord.Embed(
         title="⚡ True Architect - Tiến Hóa & Kiến Tạo",
-        description="Mọi phản hồi từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
+        description="Mọi phản h��i từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
         color=discord.Color.from_rgb(30, 30, 30)
     )
     embed.add_field(
@@ -87,6 +87,8 @@ async def custom_help(ctx):
         value=(
             "`!chat [nội dung/gửi kèm ảnh]` - Trò chuyện hoặc phân tích hình ảnh.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
+            "`!Rimg [mô tả]` - Tạo ảnh từ mô tả.\n"
+            "`!Rsong [mô tả]` - Tạo bài hát từ mô tả.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
             "`!mute @user [phút]` - Lặng câm thực thể."
         ),
@@ -125,6 +127,34 @@ async def code_architect(ctx, *, prompt: str):
         result = await call_gemini([f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"])
         if result:
             await ctx.send(f"```py\n{result}\n```")
+
+@bot.command(name="Rimg")
+async def generate_image(ctx, *, prompt: str):
+    async with ctx.typing():
+        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI image generation."])
+        if result:
+            embed = discord.Embed(
+                title="🎨 Ảnh được tạo",
+                description=result,
+                color=discord.Color.from_rgb(100, 150, 255)
+            )
+            embed.set_footer(text=f"Yêu cầu: {prompt[:100]}")
+            await ctx.send(embed=embed)
+            await ctx.send(f"**Ghi chú:** Hình ảnh được mô tả như sau. Cậu có thể dùng Midjourney, DALL-E hoặc Stable Diffusion với prompt: {result}")
+
+@bot.command(name="Rsong")
+async def generate_song(ctx, *, prompt: str):
+    async with ctx.typing():
+        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu sắc."])
+        if result:
+            embed = discord.Embed(
+                title="🎵 Bài hát được tạo",
+                description=result,
+                color=discord.Color.from_rgb(255, 150, 100)
+            )
+            embed.set_footer(text=f"Yêu cầu: {prompt[:100]}")
+            await ctx.send(embed=embed)
+            await ctx.send(f"**Ghi chú:** Lời bài hát đã được viết. Cậu có thể dùng AI text-to-music như Suno.ai, MuseNet hoặc MusicLM để tạo giai điệu cho lời này.")
 
 @bot.command(name="chat")
 async def chat_architect(ctx, *, prompt: str = ""):
