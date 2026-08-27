@@ -87,8 +87,8 @@ async def custom_help(ctx):
         value=(
             "`!chat [nội dung/gửi kèm ảnh]` - Trò chuyện hoặc phân tích hình ảnh.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
-            "`!Rimg [mô tả]` - Tạo ảnh từ mô tả.\n"
-            "`!Rsong [mô tả]` - Tạo bài hát từ mô tả.\n"
+            "`!Rjoke [mô tả]` - Tạo một joke theo mô tả (vd: dark humor).\n"
+            "`!Tpoem [mô tả]` - Viết một bài thơ ngắn theo mô tả.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
             "`!mute @user [phút]` - Lặng câm thực thể.\n"
             "`!unmute @user` - Bỏ lặng câm thực thể.\n"
@@ -141,33 +141,31 @@ async def code_architect(ctx, *, prompt: str):
         if result:
             await ctx.send(f"```py\n{result}\n```")
 
-@bot.command(name="Rimg")
-async def generate_image(ctx, *, prompt: str):
+@bot.command(name="Rjoke")
+async def generate_joke(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI."])
+        result = await call_gemini([f"Tạo một joke vui nhộn theo kiểu: {prompt}. Hãy tạo một jokes chỉ trong 1-2 câu, điềm tĩnh và hài hước."])
         if result:
             embed = discord.Embed(
-                title="🎨 Ảnh được tạo",
+                title="😄 Trò cười được tạo",
                 description=result,
-                color=discord.Color.from_rgb(100, 150, 255)
+                color=discord.Color.from_rgb(255, 215, 0)
             )
-            embed.set_footer(text=f"Yêu cầu: {prompt[:100]}")
+            embed.set_footer(text=f"Kiểu: {prompt[:100]}")
             await ctx.send(embed=embed)
-            await ctx.send(f"**Ghi chú:** Hình ảnh được mô tả như sau. Cậu có thể dùng Midjourney, DALL-E hoặc Stable Diffusion với prompt: {result}")
 
-@bot.command(name="Rsong")
-async def generate_song(ctx, *, prompt: str):
+@bot.command(name="Tpoem")
+async def generate_poem(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu sắc."])
+        result = await call_gemini([f"Viết một bài thơ ngắn (3-4 khổ) theo mô tả: {prompt}. Giữ phong cách điềm tĩnh, sâu sắc và có hồn."])
         if result:
             embed = discord.Embed(
-                title="🎵 Bài hát được tạo",
+                title="✨ Bài thơ được tạo",
                 description=result,
-                color=discord.Color.from_rgb(255, 150, 100)
+                color=discord.Color.from_rgb(200, 150, 255)
             )
-            embed.set_footer(text=f"Yêu cầu: {prompt[:100]}")
+            embed.set_footer(text=f"Chủ đề: {prompt[:100]}")
             await ctx.send(embed=embed)
-            await ctx.send(f"**Ghi chú:** Lời bài hát đã được viết. Cậu có thể dùng AI text-to-music như Suno.ai, MuseNet hoặc MusicLM để tạo giai điệu cho lời này.")
 
 @bot.command(name="chat")
 async def chat_architect(ctx, *, prompt: str = ""):
