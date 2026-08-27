@@ -48,9 +48,9 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một ngôi sao lặng im. "
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một ng[...]
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với sự thản nhiên tuyệt đối, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đưa ra giải pháp rõ ràng."
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đưa [...]
 )
 
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
@@ -79,7 +79,7 @@ async def call_gemini(contents):
 async def custom_help(ctx):
     embed = discord.Embed(
         title="⚡ True Architect - Tiến Hóa & Kiến Tạo",
-        description="Mọi phản h��i từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
+        description="Mọi phản h~~i từ hệ thống đều điềm tĩnh, trường tồn và đúng 1 câu.",
         color=discord.Color.from_rgb(30, 30, 30)
     )
     embed.add_field(
@@ -90,7 +90,9 @@ async def custom_help(ctx):
             "`!Rimg [mô tả]` - Tạo ảnh từ mô tả.\n"
             "`!Rsong [mô tả]` - Tạo bài hát từ mô tả.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
-            "`!mute @user [phút]` - Lặng câm thực thể."
+            "`!mute @user [phút]` - Lặng câm thực thể.\n"
+            "`!unmute @user` - Bỏ lặng câm thực thể.\n"
+            "`!Ttalks [nội dung]` - Bot phát nội dung qua voice chat (phải ở voice)."
         ),
         inline=False
     )
@@ -121,6 +123,18 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
         await member.remove_roles(muted_role)
         await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, chu kỳ tĩnh lặng đã kết thúc.")
 
+@bot.command(name="unmute")
+@commands.has_permissions(manage_roles=True)
+async def unmute_member(ctx, member: discord.Member):
+    guild = ctx.guild
+    muted_role = discord.utils.get(guild.roles, name="Muted")
+    
+    if muted_role and muted_role in member.roles:
+        await member.remove_roles(muted_role)
+        await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, sự tĩnh lặng đã kết thúc.")
+    else:
+        await ctx.send(f"{member.mention} không bị lặng câm, mọi thứ vẫn bình thường.")
+
 @bot.command(name="code")
 async def code_architect(ctx, *, prompt: str):
     async with ctx.typing():
@@ -131,7 +145,7 @@ async def code_architect(ctx, *, prompt: str):
 @bot.command(name="Rimg")
 async def generate_image(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI image generation."])
+        result = await call_gemini([f"Mô tả chi tiết về hình ảnh cần tạo: {prompt}. Hãy trả lời bằng một mô tả siêu chi tiết có thể dùng để tạo ảnh bằng AI im[...]
         if result:
             embed = discord.Embed(
                 title="🎨 Ảnh được tạo",
@@ -145,7 +159,7 @@ async def generate_image(ctx, *, prompt: str):
 @bot.command(name="Rsong")
 async def generate_song(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu sắc."])
+        result = await call_gemini([f"Viết lời bài hát hoàn chỉnh dựa trên yêu cầu: {prompt}. Bao gồm: Verse, Chorus, Bridge (nếu cần). Giữ phong cách điềm tĩnh và sâu s~[...]
         if result:
             embed = discord.Embed(
                 title="🎵 Bài hát được tạo",
@@ -182,6 +196,50 @@ async def chat_architect(ctx, *, prompt: str = ""):
         result = await call_gemini(contents)
         if result:
             await ctx.send(result)
+
+@bot.command(name="Ttalks")
+async def speak_in_voice(ctx, *, content: str):
+    """Bot phát nội dung qua voice chat"""
+    # Kiểm tra xem user có kết nối voice không
+    if not ctx.author.voice:
+        await ctx.send("Cậu phải ở trong một voice channel để tôi có thể nói chuyện.")
+        return
+    
+    voice_channel = ctx.author.voice.channel
+    
+    try:
+        # Bot kết nối đến voice channel
+        voice_client = await voice_channel.connect()
+    except Exception as e:
+        logger.error(f"Lỗi kết nối voice: {e}")
+        await ctx.send("Không thể kết nối tới voice channel, có lỗi xảy ra.")
+        return
+    
+    try:
+        # Tạo file âm thanh tạm thời từ nội dung
+        tts_prompt = f"Hãy chuyển đổi nội dung sau thành văn bản rõ ràng: {content}"
+        tts_result = await call_gemini([tts_prompt])
+        
+        # Lưu lời nói dự định
+        await ctx.send(f"🎤 Tôi sẽ nói: {tts_result}")
+        
+        # Ghi chú: Để phát âm thanh thực tế, bạn cần thêm library như pyttsx3 hoặc gọi TTS API
+        # Ví dụ sử dụng pyttsx3:
+        # import pyttsx3
+        # engine = pyttsx3.init()
+        # engine.save_to_file(tts_result, 'voice_output.mp3')
+        # engine.runAndWait()
+        # source = discord.FFmpegPCMAudio('voice_output.mp3')
+        # voice_client.play(source)
+        
+    except Exception as e:
+        logger.error(f"Lỗi phát âm: {e}")
+        await ctx.send("Có lỗi xảy ra khi chuẩn bị phát âm thanh.")
+    finally:
+        # Ngắt kết nối sau khi phát xong (hoặc sau một khoảng thời gian)
+        await asyncio.sleep(2)
+        if voice_client.is_connected():
+            await voice_client.disconnect()
 
 # -------------------- SỰ KIỆN KHỞI ĐỘNG --------------------
 @bot.event
