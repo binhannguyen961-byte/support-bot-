@@ -35,7 +35,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# -------------------- LƯU TRỮ DỮ LIỆU MODERATION, RPG & CLAN --------------------
+# -------------------- LƯU TRỮ DỮ LIỆU --------------------
 DATA_PATH = "moderation_data.json"
 RPG_DATA_PATH = "rpg_data.json"
 CLAN_DATA_PATH = "clan_data.json"
@@ -79,8 +79,7 @@ def get_player(user_id):
             "equipped_skills": [None, None, None],
             "inventory": {},
             "last_daily": None,
-            "trait": None,
-            "quest": None,
+            "daily_quest": None,
             "in_battle": False,
             "spin_counter": random.randint(1, 3),
             "owned_styles": [],
@@ -91,7 +90,7 @@ def get_player(user_id):
     player = rpg_data[uid]
     fields = {
         "qpoint": 0, "sp": 0, "skills": [], "equipped_skills": [None, None, None],
-        "inventory": {}, "last_daily": None, "trait": None, "quest": None,
+        "inventory": {}, "last_daily": None, "daily_quest": None,
         "in_battle": False, "spin_counter": random.randint(1, 3),
         "owned_styles": [], "equipped_style": None
     }
@@ -115,12 +114,23 @@ def make_bar(current, maximum, length=10, fill="🟩", empty="⬛"):
     filled = int(ratio * length)
     return fill * filled + empty * (length - filled)
 
-# -------------------- SKILL TREE & UNTITLED BOXING GAME STYLES --------------------
+def check_level_up(p):
+    needed = p["level"] * 300
+    leveled_up = False
+    while p["exp"] >= needed:
+        p["exp"] -= needed
+        p["level"] += 1
+        p["hp_max"] += 20
+        p["atk"] += 5
+        leveled_up = True
+        needed = p["level"] * 300
+    return leveled_up
+
+# -------------------- SKILL TREE & STYLES --------------------
 SKILL_TREE = {
     "heal": {"name": "Hồi Xuân", "cost": 2, "type": "active", "mp_cost": 20, "desc": "Hồi 40 HP ngay lập tức."},
     "crossover": {"name": "Tuyệt Kỹ Crossover", "cost": 3, "type": "active", "mp_cost": 15, "desc": "Gây 180%-250% sát thương ATK."},
     "rest": {"name": "Rest (Tĩnh Tâm)", "cost": 2, "type": "active", "mp_cost": 0, "desc": "Hồi 15 MP trong trận."},
-    
     "basic_jab": {"name": "Basic Jab", "cost": 0, "type": "active", "mp_cost": 10, "desc": "Cú đấm cơ bản ổn định."},
     "long_guard_counter": {"name": "Long Guard Counter", "cost": 0, "type": "active", "mp_cost": 15, "desc": "Phòng thủ phản đòn tầm xa."},
     "outbox_swift": {"name": "Swift Footwork", "cost": 0, "type": "active", "mp_cost": 12, "desc": "Di chuyển né tránh và phản công nhanh."},
@@ -134,92 +144,35 @@ SKILL_TREE = {
 }
 
 STYLES = {
-    "basic": {
-        "name": "Basic", "rarity": "common", "price": 1000,
-        "atk_mod": 1.0, "hp_mod": 1.0,
-        "skills": ["basic_jab", "heal", "rest"],
-        "desc": "Phong cách cơ bản nhất, không có điểm yếu cũng không quá nổi bật."
-    },
-    "long_guard": {
-        "name": "Long Guard", "rarity": "common", "price": 1200,
-        "atk_mod": 1.05, "hp_mod": 1.05,
-        "skills": ["long_guard_counter", "heal", "rest"],
-        "desc": "Tư thế thủ cao giúp tăng nhẹ khả năng chống đỡ."
-    },
-    "out_boxer": {
-        "name": "Out-Boxer", "rarity": "rare", "price": 2500,
-        "atk_mod": 1.10, "hp_mod": 0.95,
-        "skills": ["outbox_swift", "crossover", "rest"],
-        "desc": "Chuyên gia giữ khoảng cách và tung đòn cấu máu nhanh gọn."
-    },
-    "hitman": {
-        "name": "Hitman", "rarity": "rare", "price": 3000,
-        "atk_mod": 1.15, "hp_mod": 0.95,
-        "skills": ["hitman_flicker", "crossover", "heal"],
-        "desc": "Góc đánh thấp hiểm hóc với những cú Flicker Jab cấu rỉa."
-    },
-    "challenger": {
-        "name": "Challenger", "rarity": "epic", "price": 6000,
-        "atk_mod": 1.20, "hp_mod": 1.10,
-        "skills": ["challenger_rush", "crossover", "rest"],
-        "desc": "Ý chí chiến đấu kiên cường với chuỗi combo dồn dập."
-    },
-    "smash": {
-        "name": "Smash", "rarity": "epic", "price": 7500,
-        "atk_mod": 1.25, "hp_mod": 1.05,
-        "skills": ["smash_heavy", "crossover", "heal"],
-        "desc": "Sở hữu cú đấm Smash từ dưới lên gây tổn thương diện rộng."
-    },
-    "chronos": {
-        "name": "Chronos", "rarity": "legend", "price": 15000,
-        "atk_mod": 1.35, "hp_mod": 1.20,
-        "skills": ["chronos_delay", "crossover", "heal"],
-        "desc": "Kiểm soát nhịp độ trận đấu bằng các đòn đánh lệch nhịp."
-    },
-    "freedom": {
-        "name": "Freedom", "rarity": "legend", "price": 18000,
-        "atk_mod": 1.40, "hp_mod": 1.15,
-        "skills": ["freedom_flash", "crossover", "rest"],
-        "desc": "Lối đánh linh hoạt và phóng khoáng không thể đoán trước."
-    },
-    "slugger": {
-        "name": "Slugger", "rarity": "myth", "price": 35000,
-        "atk_mod": 1.50, "hp_mod": 1.30,
-        "skills": ["slugger_power", "crossover", "heal"],
-        "desc": "Sức mạnh tối thượng chuyên ép góc và phá vỡ mọi khối phòng thủ."
-    },
-    "ippo": {
-        "name": "Ippo", "rarity": "myth", "price": 50000,
-        "atk_mod": 1.60, "hp_mod": 1.40,
-        "skills": ["ippo_dempsey", "crossover", "heal"],
-        "desc": "Tuyệt kỹ Dempsey Roll huyền thoại mang lại sức sát thương kinh hoàng."
-    }
+    "basic": {"name": "Basic", "rarity": "common", "base_price": 1000, "atk_mod": 1.0, "hp_mod": 1.0, "skills": ["basic_jab", "heal", "rest"], "desc": "Phong cách cơ bản nhất."},
+    "long_guard": {"name": "Long Guard", "rarity": "common", "base_price": 1200, "atk_mod": 1.05, "hp_mod": 1.05, "skills": ["long_guard_counter", "heal", "rest"], "desc": "Tư thế thủ cao."},
+    "out_boxer": {"name": "Out-Boxer", "rarity": "rare", "base_price": 2500, "atk_mod": 1.10, "hp_mod": 0.95, "skills": ["outbox_swift", "crossover", "rest"], "desc": "Chuyên gia giữ khoảng cách."},
+    "hitman": {"name": "Hitman", "rarity": "rare", "base_price": 3000, "atk_mod": 1.15, "hp_mod": 0.95, "skills": ["hitman_flicker", "crossover", "heal"], "desc": "Góc đánh thấp hiểm hóc."},
+    "challenger": {"name": "Challenger", "rarity": "epic", "base_price": 6000, "atk_mod": 1.20, "hp_mod": 1.10, "skills": ["challenger_rush", "crossover", "rest"], "desc": "Ý chí chiến đấu kiên cường."},
+    "smash": {"name": "Smash", "rarity": "epic", "base_price": 7500, "atk_mod": 1.25, "hp_mod": 1.05, "skills": ["smash_heavy", "crossover", "heal"], "desc": "Sở hữu cú đấm Smash uy lực."},
+    "chronos": {"name": "Chronos", "rarity": "legend", "base_price": 15000, "atk_mod": 1.35, "hp_mod": 1.20, "skills": ["chronos_delay", "crossover", "heal"], "desc": "Kiểm soát nhịp độ trận đấu."},
+    "freedom": {"name": "Freedom", "rarity": "legend", "base_price": 18000, "atk_mod": 1.40, "hp_mod": 1.15, "skills": ["freedom_flash", "crossover", "rest"], "desc": "Lối đánh linh hoạt bất định."},
+    "slugger": {"name": "Slugger", "rarity": "myth", "base_price": 35000, "atk_mod": 1.50, "hp_mod": 1.30, "skills": ["slugger_power", "crossover", "heal"], "desc": "Sức mạnh tối thượng phá vỡ phòng thủ."},
+    "ippo": {"name": "Ippo", "rarity": "myth", "base_price": 50000, "atk_mod": 1.60, "hp_mod": 1.40, "skills": ["ippo_dempsey", "crossover", "heal"], "desc": "Tuyệt kỹ Dempsey Roll huyền thoại."}
 }
 
 RARITY_COLORS = {
-    "common": "⚪ Common",
-    "rare": "🔵 Rare",
-    "epic": "🟣 Epic",
-    "legend": "🟡 Legend",
-    "myth": "🔴 Myth"
+    "common": "⚪ Common", "rare": "🔵 Rare", "epic": "🟣 Epic", "legend": "🟡 Legend", "myth": "🔴 Myth"
 }
 
 BOSSES = [
-    {"name": "Superman (DC)", "hp": 950, "atk": 75, "exp": 1200, "yen": 35000, "skill_name": "❄️ Hơi Thở Băng Giá", "skill_type": "freeze"},
-    {"name": "Sentry (Marvel)", "hp": 1050, "atk": 85, "exp": 1500, "yen": 42000, "skill_name": "☀️ Sức Mạnh 1 Triệu Mặt Trời", "skill_type": "enrage"}
+    {"name": "Superman (DC)", "hp": 950, "atk": 75, "exp": 1200, "yen": 35000},
+    {"name": "Sentry (Marvel)", "hp": 1050, "atk": 85, "exp": 1500, "yen": 42000}
 ]
-
-ITEMS = {
-    "stamina": {"name": "Hộp sữa Stamina", "price": 300, "desc": "Hồi 40 HP.", "type": "heal_hp", "value": 40},
-    "bento": {"name": "Hộp Bento Kamurocho", "price": 800, "desc": "Hồi 100 HP.", "type": "heal_hp", "value": 100},
-    "lucky_spin": {"name": "🎟️ Vòng Quay Ngẫu Nhiên", "price": 0, "desc": "Quay nhận ngẫu nhiên Yên, Qpoint, EXP hoặc UBG Style!", "type": "spin", "value": 0}
-}
 
 REGULAR_ENEMIES = [
     {"name": "Quickbullet", "hp": 110, "atk": 15, "exp": 55, "yen": 1100},
     {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 70, "atk": 8, "exp": 25, "yen": 400},
-    {"name": "Sát Thủ Passione (JoJo Part 5)", "hp": 130, "atk": 16, "exp": 60, "yen": 1200}
+    {"name": "Sát Thủ Passione", "hp": 130, "atk": 16, "exp": 60, "yen": 1200}
 ]
+
+def get_scaled_price(base_price, level):
+    return int(base_price * (1 + (level - 1) * 0.25))
 
 # -------------------- COMMAND GỘP: !Thelps --------------------
 @bot.command(name="Thelps")
@@ -228,16 +181,13 @@ async def thelps_command(ctx, category: str = "main"):
 
     if cat in ["style", "styles"]:
         p = get_player(ctx.author.id)
-        embed = discord.Embed(
-            title="🥊 TRA CỨU DANH SÁCH UBG STYLES",
-            description="Trang bị Style để nhận bộ kỹ năng cố định và hệ số chỉ số tương ứng!",
-            color=discord.Color.gold()
-        )
+        embed = discord.Embed(title="🥊 TRA CỨU DANH SÁCH UBG STYLES", description="Giá mua style tự động tăng theo cấp độ người chơi!", color=discord.Color.gold())
         owned = p.get("owned_styles", [])
         curr = p.get("equipped_style")
 
         for sid, sinfo in STYLES.items():
-            status = "⭐ Đang trang bị" if curr == sid else ("✅ Đã sở hữu" if sid in owned else f"❌ Chưa sở hữu (Giá: ¥{sinfo['price']:,})")
+            price = get_scaled_price(sinfo["base_price"], p["level"])
+            status = "⭐ Đang trang bị" if curr == sid else ("✅ Đã sở hữu" if sid in owned else f"❌ Chưa sở hữu (Giá: ¥{price:,})")
             atk_p = f"+{int((sinfo['atk_mod']-1)*100)}%" if sinfo['atk_mod'] >= 1 else f"{int((sinfo['atk_mod']-1)*100)}%"
             hp_p = f"+{int((sinfo['hp_mod']-1)*100)}%" if sinfo['hp_mod'] >= 1 else f"{int((sinfo['hp_mod']-1)*100)}%"
             
@@ -250,39 +200,38 @@ async def thelps_command(ctx, category: str = "main"):
         return await ctx.send(embed=embed)
 
     elif cat in ["shop", "store"]:
-        embed = discord.Embed(
-            title="🛒 TRA CỨU DANH MỤC CỬA HÀNG",
-            description="Tất cả các vật phẩm và UBG Styles có sẵn trong Shop:",
-            color=discord.Color.green()
-        )
-        style_list = "\n".join([f"`{sid}` - {s['name']} ({RARITY_COLORS[s['rarity']]}) : **¥{s['price']:,} Yên**" for sid, s in STYLES.items()])
-        embed.add_field(name="🥊 UBG STYLES (MUA TRỰC TIẾP)", value=style_list, inline=False)
-        embed.add_field(name="🥤 VẬT PHẨM HỒI PHỤC", value="`stamina` - Hộp sữa Stamina (¥300)\n`bento` - Hộp Bento Kamurocho (¥800)", inline=False)
-        embed.set_footer(text="Dùng: !Tshop buy_style <mã> để mua Style!")
+        p = get_player(ctx.author.id)
+        embed = discord.Embed(title="🛒 CỬA HÀNG VẬT PHẨM & STYLES", description="Giá cả thay đổi linh hoạt theo Level hiện tại của bạn.", color=discord.Color.green())
+        
+        style_summary = "\n".join([f"`{sid}` - {s['name']} : **¥{get_scaled_price(s['base_price'], p['level']):,}**" for sid, s in list(STYLES.items())[:5]])
+        embed.add_field(name="🥊 MỘT SỐ UBG STYLES TIÊU BIỂU", value=style_summary + "\n*(Xem đầy đủ tại !Thelps style)*", inline=False)
+        embed.add_field(name="🥤 VẬT PHẨM ĐẶC BIỆT", value="`stamina` - Sữa Stamina (¥300)\n`bento` - Hộp Bento (¥800)\n`mystery_box` - 🎁 Hộp Bí Ẩn Yên & EXP (¥2,500)", inline=False)
+        embed.set_footer(text="Dùng: !Tshop buy <mã> hoặc !Qshop để xem cửa hàng điểm Qpoint!")
         return await ctx.send(embed=embed)
 
     else:
         embed = discord.Embed(
             title="🥊 TRUNG TÂM LỆNH SYSTEM (!Thelps)",
-            description="Tất cả các lệnh chính được gộp tại đây. Dùng `!Thelps <mục>` để xem chi tiết từng danh mục!",
+            description="Chào Nam! Hệ thống lệnh phân loại đầy đủ tính năng RPG:",
             color=discord.Color.blue()
         )
 
         embed.add_field(
-            name="📂 **DANH MỤC TRA CỨU**",
+            name="📂 **TRA CỨU & HỒ SƠ**",
             value=(
-                "`!Thelps style` : Xem toàn bộ danh sách Boxing Styles, độ hiếm & chỉ số bonus.\n"
-                "`!Thelps shop` : Xem danh mục Cửa hàng Styles & Vật phẩm."
+                "`!Thelps style` : Xem toàn bộ danh sách Styles & giá mua theo Level.\n"
+                "`!Thelps shop` : Xem danh mục Cửa hàng.\n"
+                "`!profile` : Thẻ thông tin võ sĩ, chỉ số, Level, Qpoint & Clan."
             ),
             inline=False
         )
 
         embed.add_field(
-            name="👤 **HỒ SƠ & TRANG BỊ**",
+            name="🎁 **HÀNG NGÀY & NHIỆM VỤ (NPC AN NGUYỄN)**",
             value=(
-                "`!profile` : Xem thẻ thông tin cá nhân, chỉ số, Level và Style đang dùng.\n"
-                "`!Tstyle equip <mã>` : Trang bị Style trong kho đồ.\n"
-                "`!Tstyle unequip` : Tháo Style đang sử dụng."
+                "`!daily` : Nhận quà điểm danh hằng ngày (Tỉ lệ theo Level).\n"
+                "`!daily_quest` : Nhận & hoàn thành nhiệm vụ từ NPC An Nguyễn kiếm Qpoint.\n"
+                "`!Qshop` : Mở cửa hàng đổi thưởng bằng điểm Qpoint từ nhiệm vụ."
             ),
             inline=False
         )
@@ -290,23 +239,102 @@ async def thelps_command(ctx, category: str = "main"):
         embed.add_field(
             name="⚔️ **CHIẾN ĐẤU & GACHA**",
             value=(
-                "`!battle` : Đấu đường phố ngẫu nhiên nâng level & kiếm Yên.\n"
-                "`!Tboss` : Khiêu chiến Boss nhận thưởng lớn (Yêu cầu Level 5+).\n"
-                "`!Tshop buy_style <mã>` : Mua Boxing Style bằng Yên.\n"
-                "`!Tuse spin` : Dùng Vé Vòng Quay Ngẫu Nhiên gacha Style/Yên/EXP."
+                "`!battle` : Đấu đường phố (Địch mạnh lên theo Level của bạn).\n"
+                "`!Tboss` : Khiêu chiến Boss thế giới (Level 5+).\n"
+                "`!Tshop buy <mã>` : Mua vật phẩm / Hộp bí ẩn bằng Yên.\n"
+                "`!Tuse <vật_phẩm>` : Dùng hộp bí ẩn, vé spin hoặc vật phẩm hồi máu."
             ),
             inline=False
         )
 
-        embed.set_footer(text="Gõ !Thelps style hoặc !Thelps shop để xem danh sách chi tiết!")
+        embed.set_footer(text="Gõ !Thelps style hoặc !Thelps shop để tra cứu chi tiết!")
         await ctx.send(embed=embed)
 
-# -------------------- ADVANCED RPG BATTLE ENGINE --------------------
+# -------------------- DAILY & NPC AN NGUYỄN QUESTS --------------------
+@bot.command(name="daily")
+async def daily_reward(ctx):
+    p = get_player(ctx.author.id)
+    now = datetime.utcnow()
+    
+    if p.get("last_daily"):
+        last = datetime.fromisoformat(p["last_daily"])
+        if now - last < timedelta(hours=24):
+            remaining = timedelta(hours=24) - (now - last)
+            hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+            minutes, _ = divmod(remainder, 60)
+            return await ctx.send(f"⏳ Bạn đã nhận quà hôm nay rồi! Hãy quay lại sau **{hours} giờ {minutes} phút**.")
+
+    lvl = p["level"]
+    yen_gift = int(2500 * (1 + (lvl - 1) * 0.3))
+    exp_gift = int(300 * (1 + (lvl - 1) * 0.2))
+    qp_gift = int(10 + lvl * 2)
+
+    p["yen"] += yen_gift
+    p["exp"] += exp_gift
+    p["qpoint"] += qp_gift
+    p["last_daily"] = now.isoformat()
+    
+    leveled = check_level_up(p)
+    save_json(RPG_DATA_PATH, rpg_data)
+
+    lvl_up_str = "\n⚡ **BẠN ĐÃ ĐẠT CẤP ĐỘ MỚI!**" if leveled else ""
+    await ctx.send(
+        f"🎁 **QUÀ ĐIỂM DANH HẰNG NGÀY (LEVEL {lvl})**\n"
+        f"👤 NPC An Nguyễn trao thưởng:\n"
+        f"💰 **+¥{yen_gift:,} Yên**\n"
+        f"⚡ **+{exp_gift} EXP**\n"
+        f"⭐ **+{qp_gift} Qpoint**{lvl_up_str}"
+    )
+
+@bot.command(name="daily_quest")
+async def daily_quest(ctx, action: str = None):
+    p = get_player(ctx.author.id)
+    quest = p.get("daily_quest")
+
+    if not action:
+        if not quest:
+            q_types = [
+                {"type": "battle", "target": random.randint(3, 6), "desc": "Đấu thắng các trận đường phố (!battle)", "reward_yen": 2000, "reward_qp": 15, "reward_exp": 300},
+                {"type": "train", "target": 1, "desc": "Hoàn thành 1 trận khiêu chiến Boss hoặc dạo phố", "reward_yen": 3500, "reward_qp": 25, "reward_exp": 500}
+            ]
+            chosen = random.choice(q_types)
+            p["daily_quest"] = {"desc": chosen["desc"], "type": chosen["type"], "target": chosen["target"], "progress": 0, "yen": chosen["reward_yen"], "qp": chosen["reward_qp"], "exp": chosen["reward_exp"], "claimed": False}
+            save_json(RPG_DATA_PATH, rpg_data)
+            quest = p["daily_quest"]
+
+        status = "✅ Đã hoàn thành (Gõ `!daily_quest claim` để nhận quà)" if quest["progress"] >= quest["target"] else f"⏳ Đang thực hiện ({quest['progress']}/{quest['target']})"
+        return await ctx.send(
+            f"📜 **NHIỆM VỤ TỪ NPC AN NGUYỄN**\n"
+            f"🎯 **Nội dung**: {quest['desc']}\n"
+            f"📊 **Trạng thái**: {status}\n"
+            f"🎁 **Phần thưởng**: ¥{quest['yen']:,} Yên | {quest['exp']} EXP | {quest['qp']} Qpoint"
+        )
+
+    if action.lower() == "claim":
+        if not quest: return await ctx.send("Bạn chưa nhận nhiệm vụ nào! Gõ `!daily_quest` để nhận.")
+        if quest["progress"] < quest["target"]: return await ctx.send("⚠️ Bạn chưa hoàn thành mục tiêu nhiệm vụ!")
+        if quest.get("claimed", False): return await ctx.send("⚠️ Bạn đã nhận thưởng nhiệm vụ này rồi!")
+
+        lvl_scale = 1 + (p["level"] - 1) * 0.2
+        y_rew = int(quest["yen"] * lvl_scale)
+        e_rew = int(quest["exp"] * lvl_scale)
+        q_rew = int(quest["qp"] * lvl_scale)
+
+        p["yen"] += y_rew
+        p["exp"] += e_rew
+        p["qpoint"] += q_rew
+        quest["claimed"] = True
+        
+        check_level_up(p)
+        save_json(RPG_DATA_PATH, rpg_data)
+        await ctx.send(f"🎉 **NHẬN THƯỞNG THÀNH CÔNG!** Nhận ¥{y_rew:,} Yên, {e_rew} EXP và ⭐ {q_rew} Qpoint từ NPC An Nguyễn.")
+
+# -------------------- ADVANCED BATTLE ENGINE (LEVEL SCALING) --------------------
 async def run_battle_engine(ctx, enemy_data, is_boss=False):
     p = get_player(ctx.author.id)
 
     if p.get("in_battle", False):
-        return await ctx.send("⚠️ Bạn đang ở trong trận đấu! Không thể dùng lệnh battle/boss/pvp lúc này.")
+        return await ctx.send("⚠️ Bạn đang ở trong trận đấu!")
 
     p["in_battle"] = True
     save_json(RPG_DATA_PATH, rpg_data)
@@ -314,14 +342,14 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
     try:
         c_name, _ = get_player_clan(ctx.author.id)
 
-        scale = 1 + (p["level"] - 1) * 0.18
+        scale = 1 + (p["level"] - 1) * 0.35
         e_name = enemy_data["name"]
         e_hp = int(enemy_data["hp"] * scale)
         e_max_hp = e_hp
         e_atk = int(enemy_data["atk"] * scale)
         
-        exp_reward = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.12))
-        yen_reward = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.15))
+        exp_reward = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.2))
+        yen_reward = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.25))
 
         st_id = p.get("equipped_style")
         st_mod_atk, st_mod_hp = (STYLES[st_id]["atk_mod"], STYLES[st_id]["hp_mod"]) if st_id and st_id in STYLES else (1.0, 1.0)
@@ -334,12 +362,7 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         clan_bonus = 1.15 if c_name else 1.0
         base_atk = int(p["atk"] * st_mod_atk * clan_bonus)
 
-        player_frozen = False
-
-        if st_id and st_id in STYLES:
-            eq = STYLES[st_id]["skills"]
-        else:
-            eq = p.get("equipped_skills", [None, None, None])
+        eq = STYLES[st_id]["skills"] if st_id and st_id in STYLES else p.get("equipped_skills", [None, None, None])
 
         active_menu = {"1": "👊 Đánh thường", "2": "🛡️ Phòng thủ"}
         skill_mapping = {}
@@ -360,7 +383,7 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         def battle_status(log_msg=""):
             style_str = f" [{STYLES[st_id]['name']}]" if st_id else ""
             embed = discord.Embed(
-                title=f"🥊 {ctx.author.display_name}{style_str}  VS  {e_name}", 
+                title=f"🥊 {ctx.author.display_name}{style_str} (Lv.{p['level']})  VS  {e_name} (Lv.{p['level']})", 
                 color=discord.Color.red() if is_boss else discord.Color.orange()
             )
 
@@ -368,39 +391,20 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
             p_bar_mp = make_bar(p_mp, p_mp_max, 8, "🟦", "⬛")
             e_bar_hp = make_bar(e_hp, e_max_hp, 8, "🟥", "⬛")
 
-            p_info = (
-                f"❤️ **HP**: {p_hp}/{p_hp_max}\n{p_bar_hp}\n"
-                f"🧪 **MP**: {p_mp}/{p_mp_max}\n{p_bar_mp}\n"
-                f"⚔️ **ATK**: `{base_atk}`"
-            )
-            
-            e_info = (
-                f"❤️ **HP**: {e_hp}/{e_max_hp}\n{e_bar_hp}\n\n"
-                f"⚔️ **ATK**: `{e_atk}`"
-            )
+            p_info = f"❤️ **HP**: {p_hp}/{p_hp_max}\n{p_bar_hp}\n🧪 **MP**: {p_mp}/{p_mp_max}\n{p_bar_mp}\n⚔️ **ATK**: `{base_atk}`"
+            e_info = f"❤️ **HP**: {e_hp}/{e_max_hp}\n{e_bar_hp}\n\n⚔️ **ATK**: `{e_atk}`"
 
             embed.add_field(name=f"🔵 {ctx.author.display_name}", value=p_info, inline=True)
             embed.add_field(name=f"🔴 {e_name}", value=e_info, inline=True)
             
             cmd_text = "\n".join([f"`{k}` : {v}" for k, v in active_menu.items()])
-            embed.add_field(name="🎮 LỰA CHỌN KĨ NĂNG", value=cmd_text, inline=False)
-            
-            if log_msg: 
-                embed.add_field(name="📜 DIỄN BIẾN TRẬN ĐẤU", value=f"> {log_msg}", inline=False)
-                
+            embed.add_field(name="🎮 LỰA CHỌN KỸ NĂNG", value=cmd_text, inline=False)
+            if log_msg: embed.add_field(name="📜 DIỄN BIẾN TRẬN ĐẤU", value=f"> {log_msg}", inline=False)
             return embed
 
-        status_msg = await ctx.send(embed=battle_status("Bắt đầu trận đấu!"))
+        status_msg = await ctx.send(embed=battle_status("Bắt đầu giao tranh!"))
 
         while p_hp > 0 and e_hp > 0:
-            if player_frozen:
-                player_frozen = False
-                e_dmg = random.randint(e_atk - 2, e_atk + 5)
-                p_hp -= e_dmg
-                await status_msg.edit(embed=battle_status(f"❄️ Bị đóng băng! {e_name} đánh gây {e_dmg} sát thương!"))
-                if p_hp <= 0: break
-                continue
-
             try:
                 msg = await bot.wait_for("message", timeout=30.0, check=check_msg)
                 action = msg.content
@@ -426,59 +430,35 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                         p_action_log = f"❌ Không đủ MP! (Cần {req_mp} MP)."
                     else:
                         p_mp -= req_mp
-                        if sid in ["crossover", "challenger_rush"]:
-                            dmg = int(random.randint(int(base_atk * 1.8), int(base_atk * 2.5)))
-                            e_hp -= dmg
-                            p_action_log = f"💥 Dùng **{sinfo['name']}** gây **{dmg}** sát thương!"
-                        elif sid in ["basic_jab", "long_guard_counter", "outbox_swift", "hitman_flicker"]:
-                            dmg = int(base_atk * 1.6)
-                            e_hp -= dmg
-                            p_action_log = f"🥊 Dùng **{sinfo['name']}** chính xác gây **{dmg}** sát thương!"
-                        elif sid == "heal":
-                            p_hp = min(p_hp_max, p_hp + 40)
-                            p_action_log = "🥤 Dùng **Hồi Xuân** hồi +40 HP!"
-                        elif sid == "rest":
-                            p_mp = min(p_mp_max, p_mp + 15)
-                            p_action_log = "🧘 Dùng **Rest** hồi +15 MP!"
-                        elif sid == "smash_heavy":
-                            dmg = int(base_atk * 2.7)
-                            e_hp -= dmg
-                            p_action_log = f"💥 Dùng **Smash Heavy** gây **{dmg}** sát thương!"
-                        elif sid in ["chronos_delay", "freedom_flash"]:
-                            dmg = int(base_atk * 3.0)
-                            e_hp -= dmg
-                            p_action_log = f"⚡ Dùng **{sinfo['name']}** gây **{dmg}** sát thương!"
-                        elif sid in ["slugger_power", "ippo_dempsey"]:
-                            dmg = int(base_atk * 3.8)
-                            e_hp -= dmg
-                            p_action_log = f"🔥 **{sinfo['name']}** bộc phát toàn lực gây **{dmg}** sát thương!"
+                        dmg = int(base_atk * 2.0)
+                        e_hp -= dmg
+                        p_action_log = f"💥 Dùng **{sinfo['name']}** gây **{dmg}** sát thương!"
 
                 if e_hp <= 0:
                     e_hp = 0
                     p["exp"] += exp_reward
                     p["yen"] += yen_reward
                     
-                    spin_msg = ""
-                    p["spin_counter"] -= 1
-                    if p["spin_counter"] <= 0:
-                        p["inventory"]["lucky_spin"] = p["inventory"].get("lucky_spin", 0) + 1
-                        p["spin_counter"] = random.randint(1, 3)
-                        spin_msg = "\n🎟️ **BẠN NHẬN ĐƯỢC 1x VÒNG QUAY NGẪU NHIÊN!**"
+                    q = p.get("daily_quest")
+                    if q and not q.get("claimed", False) and q["type"] in ["battle", "train"]:
+                        q["progress"] = min(q["target"], q["progress"] + 1)
 
-                    await status_msg.edit(embed=battle_status(f"🎉 CHIẾN THẮNG! Nhận {exp_reward} EXP và ¥{yen_reward:,}{spin_msg}"))
+                    leveled = check_level_up(p)
+                    lvl_up_str = "\n⚡ **BẠN ĐÃ LÊN CẤP ĐỘ MỚI!**" if leveled else ""
+
+                    await status_msg.edit(embed=battle_status(f"🎉 CHIẾN THẮNG! Nhận {exp_reward} EXP và ¥{yen_reward:,}{lvl_up_str}"))
                     break
 
                 e_dmg = random.randint(e_atk - 2, e_atk + 6)
                 if is_defending: e_dmg = int(e_dmg * 0.5)
                 p_hp -= e_dmg
-                e_action_log = f"{e_name} đánh trả gây **{e_dmg}** sát thương!"
 
                 if p_hp <= 0:
                     p_hp = 0
                     await status_msg.edit(embed=battle_status(f"💀 THẤT BẠI trước {e_name}..."))
                     break
 
-                await status_msg.edit(embed=battle_status(f"{p_action_log}\n{e_action_log}"))
+                await status_msg.edit(embed=battle_status(f"{p_action_log}\n{e_name} đánh trả gây **{e_dmg}** sát thương!"))
 
             except asyncio.TimeoutError:
                 await ctx.send("Quá thời gian lựa chọn!")
@@ -488,68 +468,100 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         p["in_battle"] = False
         save_json(RPG_DATA_PATH, rpg_data)
 
-# -------------------- COMMANDS: STYLE SYSTEM --------------------
-@bot.command(name="Tstyle")
-async def style_command(ctx, action: str = None, style_id: str = None):
-    p = get_player(ctx.author.id)
-
-    if not action:
-        return await ctx.send("Vui lòng dùng `!Thelps style` để xem danh sách Style, hoặc `!Tstyle equip <mã>` để trang bị!")
-
-    act = action.lower()
-    if act == "equip":
-        if not style_id: return await ctx.send("Nhập mã style muốn trang bị! Ví dụ: `!Tstyle equip ippo`")
-        sid = style_id.lower()
-        if sid not in STYLES: return await ctx.send("Mã style không tồn tại!")
-        if sid not in p.get("owned_styles", []): return await ctx.send("Bạn chưa sở hữu style này! Hãy mua trong Shop hoặc quay vòng quay.")
-
-        p["equipped_style"] = sid
-        save_json(RPG_DATA_PATH, rpg_data)
-        await ctx.send(f"🥊 Đã trang bị thành công **{STYLES[sid]['name']}**!")
-
-    elif act == "unequip":
-        p["equipped_style"] = None
-        save_json(RPG_DATA_PATH, rpg_data)
-        await ctx.send("🛡️ Đã gỡ Style thành công.")
-
-# -------------------- COMMANDS: SHOP, BATTLE, TBOSS, TUSE --------------------
-@bot.command(name="battle")
-async def battle_command(ctx):
-    enemy = random.choice(REGULAR_ENEMIES)
-    await run_battle_engine(ctx, enemy, is_boss=False)
-
-@bot.command(name="Tboss")
-async def boss_command(ctx):
-    p = get_player(ctx.author.id)
-    if p["level"] < 5: return await ctx.send("⚠️ Cần đạt Level 5 trở lên để đánh Boss!")
-    boss = random.choice(BOSSES)
-    await run_battle_engine(ctx, boss, is_boss=True)
-
+# -------------------- SHOP, QSHOP & USABLE ITEMS --------------------
 @bot.command(name="Tshop")
 async def shop_command(ctx, action: str = None, item_code: str = None):
     p = get_player(ctx.author.id)
 
     if not action:
-        return await ctx.send("Vui lòng dùng `!Thelps shop` để xem mặt hàng, hoặc `!Tshop buy_style <mã>` để mua!")
+        return await ctx.send("Vui lòng dùng `!Thelps shop` để xem danh sách mặt hàng, hoặc `!Tshop buy <mã>` để mua vật phẩm!")
 
-    if action.lower() == "buy_style":
-        if not item_code: return await ctx.send("Vui lòng nhập mã style muốn mua!")
+    act = action.lower()
+    if act == "buy":
+        if not item_code: return await ctx.send("Nhập mã vật phẩm muốn mua! Ví dụ: `!Tshop buy mystery_box`")
+        code = item_code.lower()
+
+        prices = {
+            "stamina": 300,
+            "bento": 800,
+            "mystery_box": 2500
+        }
+
+        if code not in prices: return await ctx.send("Mã vật phẩm không tồn tại trong cửa hàng Yên!")
+        price = prices[code]
+
+        if p["yen"] < price:
+            return await ctx.send(f"❌ Không đủ Yên! Cần **¥{price:,} Yên**.")
+
+        p["yen"] -= price
+        p["inventory"][code] = p["inventory"].get(code, 0) + 1
+        save_json(RPG_DATA_PATH, rpg_data)
+        await ctx.send(f"🛍️ Mua thành công **1x {code}** với giá ¥{price:,} Yên!")
+
+    elif act == "buy_style":
+        if not item_code: return await ctx.send("Nhập mã style muốn mua!")
         sid = item_code.lower()
         if sid not in STYLES: return await ctx.send("Mã style không tồn tại!")
         if sid in p.get("owned_styles", []): return await ctx.send("Bạn đã sở hữu style này rồi!")
         
-        price = STYLES[sid]["price"]
+        price = get_scaled_price(STYLES[sid]["base_price"], p["level"])
         if p["yen"] < price:
-            return await ctx.send(f"❌ Không đủ Yên! Cần **¥{price:,} Yên** để mua style này.")
+            return await ctx.send(f"❌ Không đủ Yên! Cần **¥{price:,} Yên** (Giá đã tăng theo Level {p['level']}).")
 
         p["yen"] -= price
         p["owned_styles"].append(sid)
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎉 Mua thành công style **{STYLES[sid]['name']}**!")
 
+@bot.command(name="Qshop")
+async def qshop_command(ctx):
+    p = get_player(ctx.author.id)
+    embed = discord.Embed(
+        title="⭐ CỬA HÀNG ĐIỂM NHIỆM VỤ (QSHOP)",
+        description=f"Điểm Qpoint hiện có của bạn: **{p['qpoint']} ⭐**\nDùng lệnh `!Qbuy <mã>` để đổi quà:",
+        color=discord.Color.purple()
+    )
+    embed.add_field(
+        name="🎁 MẶT HÀNG ĐỔI THƯỞNG",
+        value=(
+            "`spin_ticket` (50 Qpoint) : Nhận 1x Vé Vòng Quay Ngẫu Nhiên.\n"
+            "`mystery_box` (80 Qpoint) : Nhận 1x Hộp Bí Ẩn Yên & EXP.\n"
+            "`huge_yen` (120 Qpoint) : Đổi nhận ngay ¥50,000 Yên."
+        ),
+        inline=False
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name="Qbuy")
+async def qbuy_command(ctx, item_code: str = None):
+    if not item_code: return await ctx.send("Nhập mã vật phẩm Qshop muốn mua: `!Qbuy spin_ticket`")
+    p = get_player(ctx.author.id)
+    code = item_code.lower()
+
+    costs = {"spin_ticket": 50, "mystery_box": 80, "huge_yen": 120}
+    if code not in costs: return await ctx.send("Mã mặt hàng Qshop không hợp lệ!")
+
+    cost = costs[code]
+    if p["qpoint"] < cost:
+        return await ctx.send(f"❌ Không đủ Qpoint! Bạn cần **{cost} ⭐** (Hiện có: {p['qpoint']} ⭐).")
+
+    p["qpoint"] -= cost
+    if code == "spin_ticket":
+        p["inventory"]["lucky_spin"] = p["inventory"].get("lucky_spin", 0) + 1
+        res = "1x Vé Vòng Quay Ngẫu Nhiên"
+    elif code == "mystery_box":
+        p["inventory"]["mystery_box"] = p["inventory"].get("mystery_box", 0) + 1
+        res = "1x Hộp Bí Ẩn"
+    else:
+        p["yen"] += 50000
+        res = "¥50,000 Yên"
+
+    save_json(RPG_DATA_PATH, rpg_data)
+    await ctx.send(f"🎉 Đổi thành công **{res}** bằng điểm Qpoint!")
+
 @bot.command(name="Tuse")
 async def use_item(ctx, item_code: str = None):
-    if not item_code: return await ctx.send("Nhập mã vật phẩm muốn dùng: `!Tuse spin`")
+    if not item_code: return await ctx.send("Nhập mã vật phẩm muốn dùng: `!Tuse mystery_box` hoặc `!Tuse spin`")
 
     p = get_player(ctx.author.id)
     code = item_code.lower()
@@ -560,39 +572,24 @@ async def use_item(ctx, item_code: str = None):
 
     inv[code] -= 1
 
-    if code == "lucky_spin":
-        reward_type = random.choices(["yen", "qp", "exp", "style"], weights=[35, 25, 20, 20])[0]
-        
-        if reward_type == "style":
-            rarity_weights = {"common": 50, "rare": 30, "epic": 15, "legend": 4, "myth": 1}
-            pool = []
-            for sid, s in STYLES.items():
-                if sid not in p.get("owned_styles", []):
-                    pool.extend([sid] * rarity_weights.get(s["rarity"], 10))
-            
-            if pool:
-                got_style = random.choice(pool)
-                p["owned_styles"].append(got_style)
-                res_str = f"🥊 **[{RARITY_COLORS[STYLES[got_style]['rarity']]}] Style {STYLES[got_style]['name']}**"
-            else:
-                val = 10000
-                p["yen"] += val
-                res_str = f"💰 **¥{val:,} Yên** (Đã sưu tầm toàn bộ Style)"
-        elif reward_type == "yen":
-            val = random.randint(3000, 25000)
-            p["yen"] += val
-            res_str = f"💰 **¥{val:,} Yên**"
-        elif reward_type == "qp":
-            val = random.randint(20, 100)
-            p["qpoint"] += val
-            res_str = f"⭐ **{val} Qpoint**"
-        else:
-            val = random.randint(150, 800)
-            p["exp"] += val
-            res_str = f"⚡ **{val} EXP**"
-
+    if code == "mystery_box":
+        lvl = p["level"]
+        yen_drop = random.randint(3000, 10000) * lvl
+        exp_drop = random.randint(500, 2000) * lvl
+        p["yen"] += yen_drop
+        p["exp"] += exp_drop
+        leveled = check_level_up(p)
         save_json(RPG_DATA_PATH, rpg_data)
-        await ctx.send(f"🎰 **VÒNG QUAY NGẪU NHIÊN...**\n🎉 Bạn nhận được: {res_str}!")
+        lvl_str = "\n⚡ **BẠN ĐÃ LÊN CẤP!**" if leveled else ""
+        await ctx.send(f"🎁 **MỞ HỘP BÍ ẨN (Level {lvl})**\n🎉 Bạn nhận được: **¥{yen_drop:,} Yên** và **{exp_drop} EXP**!{lvl_str}")
+
+    elif code == "lucky_spin":
+        val = random.randint(5000, 30000) * p["level"]
+        p["yen"] += val
+        save_json(RPG_DATA_PATH, rpg_data)
+        await ctx.send(f"🎰 **VÒNG QUAY NGẪU NHIÊN**\n🎉 Bạn nhận được: **¥{val:,} Yên**!")
+    else:
+        await ctx.send("Vật phẩm không thể sử dụng trực tiếp lúc này.")
 
 # -------------------- COMMAND: PROFILE --------------------
 @bot.command(name="profile")
@@ -604,44 +601,48 @@ async def profile(ctx):
     if st_id and st_id in STYLES:
         st = STYLES[st_id]
         style_str = f"[{RARITY_COLORS[st['rarity']]}] **{st['name']}**"
-        atk_bonus = f" (ATK x{st['atk_mod']})"
-        hp_bonus = f" (HP x{st['hp_mod']})"
     else:
         style_str = "❌ Chưa trang bị"
-        atk_bonus = ""
-        hp_bonus = ""
 
     clan_str = f"🏰 **{c_name}** (+15% ATK)" if c_name else "❌ Chưa tham gia Clan"
-    
-    owned_count = len(p.get("owned_styles", []))
-    total_styles = len(STYLES)
+    inv = p.get("inventory", {})
 
-    embed = discord.Embed(
-        title=f"💳 THẺ VÕ SĨ: {ctx.author.display_name.upper()}",
-        color=discord.Color.gold()
-    )
+    embed = discord.Embed(title=f"💳 THẺ VÕ SĨ: {ctx.author.display_name.upper()}", color=discord.Color.gold())
     embed.set_thumbnail(url=ctx.author.display_avatar.url)
 
     embed.add_field(
         name="📊 **THÔNG TIN CƠ BẢN**",
-        value=f"⭐ **Cấp độ**: Level `{p['level']}`\n⚡ **Kinh nghiệm**: `{p['exp']}` EXP\n💰 **Tài sản**: `¥{p['yen']:,}` Yên\n🎟️ **Vé Spin**: `{p.get('inventory', {}).get('lucky_spin', 0)}` vé",
+        value=f"⭐ **Cấp độ**: Level `{p['level']}`\n⚡ **EXP**: `{p['exp']}/{p['level']*300}`\n💰 **Tài sản**: `¥{p['yen']:,}` Yên\n⭐ **Qpoint**: `{p['qpoint']}` điểm",
         inline=False
     )
 
     embed.add_field(
-        name="🥊 **THÔNG SỐ CHIẾN ĐẤU**",
-        value=f"❤️ **HP Gốc**: `{p['hp_max']}`{hp_bonus}\n🧪 **MP Gốc**: `{p['mp_max']}`\n⚔️ **ATK Gốc**: `{p['atk']}`{atk_bonus}",
+        name="🎒 **TÚI ĐỒ VẬT PHẨM**",
+        value=f"🎁 **Hộp Bí Ẩn**: `{inv.get('mystery_box', 0)}`\n🎟️ **Vé Spin**: `{inv.get('lucky_spin', 0)}`\n🥤 **Stamina / Bento**: `{inv.get('stamina', 0)} / {inv.get('bento', 0)}`",
         inline=True
     )
 
     embed.add_field(
         name="🛡️ **TRANG BỊ & TỔ CHỨC**",
-        value=f"🥊 **UBG Style**: {style_str}\n📚 **Sưu tầm Style**: `{owned_count}/{total_styles}`\n{clan_str}",
+        value=f"🥊 **UBG Style**: {style_str}\n{clan_str}",
         inline=True
     )
 
-    embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh đầy đủ!")
+    embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh!")
     await ctx.send(embed=embed)
+
+# -------------------- COMMANDS CHIẾN ĐẤU --------------------
+@bot.command(name="battle")
+async def battle_command(ctx):
+    enemy = random.choice(REGULAR_ENEMIES)
+    await run_battle_engine(ctx, enemy, is_boss=False)
+
+@bot.command(name="Tboss")
+async def boss_command(ctx):
+    p = get_player(ctx.author.id)
+    if p["level"] < 5: return await ctx.send("⚠️ Cần đạt Level 5 trở lên để khiêu chiến Boss!")
+    boss = random.choice(BOSSES)
+    await run_battle_engine(ctx, boss, is_boss=True)
 
 # -------------------- KHỞI ĐỘNG --------------------
 @bot.event
