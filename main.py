@@ -114,7 +114,6 @@ SKILL_TREE = {
     "meditation": {"name": "Thiền Định", "cost": 2, "type": "passive", "desc": "Tăng vĩnh viễn +15 MP Max.", "val": 15},
 }
 
-# Tự động bổ sung đủ 50 kỹ năng vào cây Skill Tree
 for i in range(5, 51):
     SKILL_TREE[f"passive_skill_{i}"] = {
         "name": f"Kỹ Năng Thụ Động #{i}",
@@ -183,19 +182,111 @@ async def confirm_action(ctx, target_user, action_desc: str, timeout: int = 30):
         except Exception: pass
         return False
 
-# -------------------- NHIỆM VỤ AN NGUYỄN --------------------
+# -------------------- HƯỚNG DẪN LỆNH (THELPS) --------------------
+@bot.command(name="Thelps")
+async def custom_help(ctx, category: str = None):
+    prefix = "!"
+    
+    if category and category.lower() in ["mod", "moderation", "admin"]:
+        embed = discord.Embed(
+            title="🛡️ BẢNG LỆNH MODERATION & QUẢN TRỊ",
+            description="Dành riêng cho Admin và Moderators để quản lý Server.",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="🔨 Lệnh Quản Lý Thành Viên",
+            value=(
+                f"`{prefix}kick @user [lý do]` - Trục xuất thành viên khỏi Server.\n"
+                f"`{prefix}ban @user [lý do]` - Cấm vĩnh viễn thành viên khỏi Server.\n"
+                f"`{prefix}unban <user_id>` - Gỡ cấm cho thành viên bằng ID.\n"
+                f"`{prefix}mute @user <thời_gian>` - Câm lặng thành viên (Ví dụ: `10m`, `1h`).\n"
+                f"`{prefix}unmute @user` - Gỡ câm lặng cho thành viên."
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="🧹 Lệnh Dọn Dẹp & Cấu Hình",
+            value=(
+                f"`{prefix}clear <số_lượng>` - Xóa nhanh số lượng tin nhắn trong kênh.\n"
+                f"`{prefix}automod <on/off>` - Bật/Tắt hệ thống tự động lọc từ cấm.\n"
+                f"`{prefix}addword <từ_cấm>` - Thêm từ vào danh sách đen AutoMod.\n"
+                f"`{prefix}delword <từ_cấm>` - Xóa từ khỏi danh sách đen AutoMod."
+            ),
+            inline=False
+        )
+        embed.set_footer(text="Lưu ý: Bạn cần có quyền Administrator hoặc Manage Messages để dùng các lệnh này.")
+        return await ctx.send(embed=embed)
+
+    embed = discord.Embed(
+        title="⚔️ TRUE ARCHITECT - CẨM NANG GAME & HỆ THỐNG LỆNH",
+        description=(
+            "Chào mừng bạn đến với thế giới RPG! Hãy cày EXP, săn Boss, tham gia Clan và giao chiến PvP để trở thành người mạnh nhất.\n"
+            "👉 *Dùng `!Thelps mod` để xem danh sách lệnh Quản Trị Viên.*"
+        ),
+        color=discord.Color.gold()
+    )
+
+    embed.add_field(
+        name="🎮 1. Chiến Đấu & Nhiệm Vụ (Battle & Quests)",
+        value=(
+            f"`{prefix}battle` - Đánh quái thường tích lũy Yên và EXP.\n"
+            f"`{prefix}Tboss` - Thách đấu Boss thế giới (Yêu cầu **Level 5+**).\n"
+            f"`{prefix}Tpvp @user` - Thách đấu PvP với người chơi khác (Cần đối phương xác nhận ✅).\n"
+            f"`{prefix}Tquest` - Nhận nhiệm vụ mỗi giờ từ NPC An Nguyễn để cày **Qpoint**.\n"
+            f"`{prefix}Qshop` - Cửa hàng Qpoint (Đổi lấy Trait xịn, Yên, EXP, Rokaka)."
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🌳 2. Phát Triển Nhân Vật & Skill Tree",
+        value=(
+            f"`{prefix}profile` - Xem chỉ số chi tiết, Level, Qpoint, Trait và Clan.\n"
+            f"`{prefix}Tskill` - Mở Cây Kỹ Năng (Nhận 1 SP mỗi khi lên cấp, gồm 50 kỹ năng).\n"
+            f"`{prefix}Tskill learn <mã_skill>` - Học kỹ năng mới (Ví dụ: `!Tskill learn rest`)."
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🏰 3. Bang Hội (Clan System)",
+        value=(
+            f"`{prefix}Tclan info` - Xem thông tin Clan hiện tại.\n"
+            f"`{prefix}Tclan create <tên_clan>` - Tạo Clan mới (Cần **Level 3+** & **3,000 Yên**).\n"
+            f"`{prefix}Tclan invite @user` - Mời người chơi khác vào Clan.\n"
+            "✨ *Đặc quyền: Thành viên Clan được **+15% ATK** khi đánh quái và Boss!*"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🏪 4. Kinh Tế & Vật Phẩm (Shop & Items)",
+        value=(
+            f"`{prefix}Tdaily` - Nhận quà điểm danh hằng ngày (Mỗi 12 giờ).\n"
+            f"`{prefix}Tshop` - Cửa hàng vật phẩm Kamurocho.\n"
+            f"`{prefix}Tshop buy <mã_món> [số_lượng]` - Mua vật phẩm.\n"
+            f"`{prefix}Tinventory` - Kiểm tra túi đồ cá nhân.\n"
+            f"`{prefix}Tuse <mã_món>` - Sử dụng vật phẩm từ túi đồ."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Gõ !Thelps mod để xem lệnh dành cho Moderator")
+    await ctx.send(embed=embed)
+
+# -------------------- NHIỆM VỤ AN NGUYỄN & QSHOP --------------------
 def check_quest_progress(p, qtype, amount=1):
     q = p.get("quest")
-    if not q or q["completed"]:
-        return False
+    if not q or q["completed"]: return False
 
-    q["current"] += amount
-    if q["current"] >= q["target"]:
-        q["completed"] = True
-        p["qpoint"] += q["reward_qp"]
+    if q["type"] == qtype:
+        q["current"] += amount
+        if q["current"] >= q["target"]:
+            q["completed"] = True
+            p["qpoint"] += q["reward_qp"]
+            save_json(RPG_DATA_PATH, rpg_data)
+            return True
         save_json(RPG_DATA_PATH, rpg_data)
-        return True
-    save_json(RPG_DATA_PATH, rpg_data)
     return False
 
 @bot.command(name="Tquest")
@@ -209,7 +300,6 @@ async def quest_command(ctx):
             q = p["quest"]
             return await ctx.send(f"📜 **Nhiệm vụ từ An Nguyễn:** {q['desc']}\nThăng tiến: **{q['current']}/{q['target']}** | Phần thưởng: **{q['reward_qp']} Qpoint**")
 
-    # Tạo nhiệm vụ mới mỗi giờ
     q_types = [
         {"type": "damage", "target": 300, "desc": "Gây tổng cộng 300 sát thương lên kẻ địch.", "qp": 50},
         {"type": "win_battle", "target": 5, "desc": "Thắng 5 trận Battle thường.", "qp": 80},
@@ -231,7 +321,6 @@ async def quest_command(ctx):
 @bot.command(name="Qshop")
 async def qshop_command(ctx, action: str = None, item_code: str = None):
     p = get_player(ctx.author.id)
-    
     qitems = {
         "random_trait": {"name": "Thức tỉnh Trait Ngẫu Nhiên", "qp": 300, "desc": "75% nhận Trait xịn, 25% nhận Lời nguyền."},
         "yen_pack": {"name": "Túi 50,000 Yên", "qp": 150, "desc": "Cung cấp ngay 50,000 Yên."},
@@ -246,12 +335,10 @@ async def qshop_command(ctx, action: str = None, item_code: str = None):
         return await ctx.send(embed=embed)
 
     code = item_code.lower() if item_code else ""
-    if code not in qitems:
-        return await ctx.send("Mã món hàng Qshop không hợp lệ!")
+    if code not in qitems: return await ctx.send("Mã món hàng Qshop không hợp lệ!")
 
     item = qitems[code]
-    if p["qpoint"] < item["qp"]:
-        return await ctx.send(f"Bạn không đủ Qpoint! Cần **{item['qp']} Qpoint** nhưng chỉ có **{p['qpoint']}**.")
+    if p["qpoint"] < item["qp"]: return await ctx.send(f"Bạn không đủ Qpoint! Cần **{item['qp']} Qpoint**.")
 
     p["qpoint"] -= item["qp"]
     if code == "random_trait":
@@ -270,7 +357,7 @@ async def qshop_command(ctx, action: str = None, item_code: str = None):
 
     save_json(RPG_DATA_PATH, rpg_data)
 
-# -------------------- HỆ THỐNG SKILL TREE COMMAND --------------------
+# -------------------- SKILL TREE COMMAND --------------------
 @bot.command(name="Tskill")
 async def skill_command(ctx, action: str = None, skill_id: str = None):
     p = get_player(ctx.author.id)
@@ -278,7 +365,7 @@ async def skill_command(ctx, action: str = None, skill_id: str = None):
     if not action:
         embed = discord.Embed(title="🌳 Cây Kỹ Năng (Skill Tree)", description=f"Skill Point (SP) hiện có: **{p['sp']} SP**\nDùng `!Tskill learn <mã_skill>` để học.", color=discord.Color.green())
         learned = p.get("skills", [])
-        for sid, sinfo in list(SKILL_TREE.items())[:10]: # Hiển thị các skill chính
+        for sid, sinfo in list(SKILL_TREE.items())[:10]:
             status = "✅ Đã học" if sid in learned else f"❌ Giá: {sinfo['cost']} SP"
             embed.add_field(name=f"📜 {sinfo['name']} (`{sid}`)", value=f"Loại: {sinfo['type'].upper()} | {status}\n*{sinfo['desc']}*", inline=False)
         embed.set_footer(text="Gợi ý: Dùng !Tskill learn rest để học kỹ năng hồi MP trong trận đấu.")
@@ -291,18 +378,15 @@ async def skill_command(ctx, action: str = None, skill_id: str = None):
         sid = skill_id.lower()
         sinfo = SKILL_TREE[sid]
 
-        if sid in p["skills"]:
-            return await ctx.send("Bạn đã học kỹ năng này rồi!")
-        if p["sp"] < sinfo["cost"]:
-            return await ctx.send(f"Bạn không đủ SP! Cần **{sinfo['cost']} SP** nhưng chỉ có **{p['sp']} SP**.")
+        if sid in p["skills"]: return await ctx.send("Bạn đã học kỹ năng này rồi!")
+        if p["sp"] < sinfo["cost"]: return await ctx.send(f"Bạn không đủ SP! Cần **{sinfo['cost']} SP**.")
 
         p["sp"] -= sinfo["cost"]
         p["skills"].append(sid)
 
-        # Buff trực tiếp chỉ số nếu là passive
-        if sinfo["name"] == "Power Strike": p["atk"] += sinfo["val"]
-        elif sinfo["name"] == "Vitality": p["hp_max"] += sinfo["val"]
-        elif sinfo["name"] == "Meditation": p["mp_max"] += sinfo["val"]
+        if sid == "power_strike": p["atk"] += sinfo["val"]
+        elif sid == "vitality": p["hp_max"] += sinfo["val"]
+        elif sid == "meditation": p["mp_max"] += sinfo["val"]
 
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎉 Bạn đã học thành công kỹ năng **{sinfo['name']}**!")
@@ -317,15 +401,14 @@ async def pvp_command(ctx, target: discord.Member = None):
     p2 = get_player(target.id)
 
     ok = await confirm_action(ctx, target, f"{ctx.author.mention} thách đấu PvP với bạn!")
-    if not ok:
-        return
+    if not ok: return
 
     p1_hp, p2_hp = p1["hp_max"], p2["hp_max"]
     p1_mp, p2_mp = p1["mp_max"], p2["mp_max"]
 
     await ctx.send(f"⚔️ **TRẬN THÁCH ĐẤU PVP BẮT ĐẦU!**\n{ctx.author.mention} (HP: {p1_hp}) VS {target.mention} (HP: {p2_hp})")
 
-    turn = 1 # 1: p1, 2: p2
+    turn = 1
     while p1_hp > 0 and p2_hp > 0:
         attacker_user = ctx.author if turn == 1 else target
         defender_user = target if turn == 1 else ctx.author
@@ -371,61 +454,47 @@ async def pvp_command(ctx, target: discord.Member = None):
             await ctx.send(f"Quá thời gian lựa chọn! Trận đấu PvP kết thúc.")
             break
 
-# -------------------- TÍNH NĂNG TCLAN --------------------
+# -------------------- TCLAN SYSTEM --------------------
 @bot.command(name="Tclan")
 async def clan_command(ctx, sub_cmd: str = None, *, arg: str = None):
     p = get_player(ctx.author.id)
     c_name, c_info = get_player_clan(ctx.author.id)
 
     if not sub_cmd or sub_cmd.lower() == "info":
-        if not c_name:
-            return await ctx.send("Bạn chưa tham gia Clan nào. Dùng `!Tclan create <tên_clan>` để tạo mới!")
+        if not c_name: return await ctx.send("Bạn chưa tham gia Clan nào. Dùng `!Tclan create <tên_clan>` để tạo mới!")
         
         members_str = ", ".join([f"<@{m}>" for m in c_info["members"]])
         embed = discord.Embed(title=f"🏰 Clan: {c_name}", color=discord.Color.gold())
         embed.add_field(name="Chủ Clan", value=f"<@{c_info['owner']}>", inline=True)
         embed.add_field(name="Số thành viên", value=f"{len(c_info['members'])}", inline=True)
-        embed.add_field(name="Nội quy / Tác dụng", value="Thành viên Clan được **+15% ATK** khi săn quái và Boss!", inline=False)
+        embed.add_field(name="Đặc quyền", value="Thành viên Clan được **+15% ATK** khi săn quái và Boss!", inline=False)
         embed.add_field(name="Danh sách thành viên", value=members_str, inline=False)
         return await ctx.send(embed=embed)
 
     act = sub_cmd.lower()
     if act == "create":
-        if not arg:
-            return await ctx.send("Vui lòng nhập tên Clan! Ví dụ: `!Tclan create Passione`")
-        if c_name:
-            return await ctx.send(f"Bạn đã thuộc Clan **{c_name}** rồi!")
+        if not arg: return await ctx.send("Vui lòng nhập tên Clan!")
+        if c_name: return await ctx.send(f"Bạn đã thuộc Clan **{c_name}** rồi!")
         if p["level"] < 3 or p["yen"] < 3000:
             return await ctx.send("⚠️ **YÊU CẦU TẠO CLAN:** Bạn phải đạt **Level 3+** và có ít nhất **3,000 Yên**!")
 
         clan_title = arg.strip()
-        if clan_title in clan_data:
-            return await ctx.send("Tên Clan này đã tồn tại, hãy chọn tên khác.")
+        if clan_title in clan_data: return await ctx.send("Tên Clan này đã tồn tại!")
 
         p["yen"] -= 3000
-        clan_data[clan_title] = {
-            "owner": str(ctx.author.id),
-            "members": [str(ctx.author.id)]
-        }
+        clan_data[clan_title] = {"owner": str(ctx.author.id), "members": [str(ctx.author.id)]}
         save_json(CLAN_DATA_PATH, clan_data)
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎉 Đã tiêu tốn 3,000 Yên và thành lập Clan **{clan_title}** thành công!")
 
     elif act == "invite":
-        if not ctx.message.mentions:
-            return await ctx.send("Vui lòng @người bạn muốn mời vào Clan!")
-        if not c_name:
-            return await ctx.send("Bạn phải có Clan mới có thể mời người khác!")
-        if c_info["owner"] != str(ctx.author.id):
-            return await ctx.send("Chỉ chủ Clan mới có quyền mời thành viên!")
+        if not ctx.message.mentions: return await ctx.send("Vui lòng @người bạn muốn mời vào Clan!")
+        if not c_name: return await ctx.send("Bạn phải có Clan mới có thể mời người khác!")
+        if c_info["owner"] != str(ctx.author.id): return await ctx.send("Chỉ chủ Clan mới có quyền mời thành viên!")
 
         target = ctx.message.mentions[0]
-        if target.id == ctx.author.id or target.bot:
-            return await ctx.send("Mục tiêu không hợp lệ.")
-
         target_clan, _ = get_player_clan(target.id)
-        if target_clan:
-            return await ctx.send(f"{target.mention} đã ở trong Clan **{target_clan}** rồi!")
+        if target_clan: return await ctx.send(f"{target.mention} đã ở trong Clan **{target_clan}** rồi!")
 
         ok = await confirm_action(ctx, target, f"Bạn được {ctx.author.mention} mời tham gia Clan **{c_name}**!")
         if ok:
@@ -433,33 +502,7 @@ async def clan_command(ctx, sub_cmd: str = None, *, arg: str = None):
             save_json(CLAN_DATA_PATH, clan_data)
             await ctx.send(f"🎊 {target.mention} đã chính thức gia nhập Clan **{c_name}**!")
 
-# -------------------- HELPER & RPG BATTLE --------------------
-@bot.command(name="Thelps")
-async def custom_help(ctx):
-    embed = discord.Embed(title="⚡ True Architect - Hướng Dẫn Lệnh", color=discord.Color.blue())
-    embed.add_field(
-        name="🎮 Battle, PvP & Boss",
-        value=(
-            "`!battle` - Đánh quái thường.\n"
-            "`!Tboss` - Đánh Boss (Cần Level 5+).\n"
-            "`!Tpvp @user` - Thách đấu PvP người chơi khác.\n"
-            "`!Tquest` - Nhận nhiệm vụ mỗi giờ từ An Nguyễn.\n"
-            "`!Qshop` - Cửa hàng đổi Qpoint lấy Trait/Yên/EXP.\n"
-            "`!Tskill` - Xem và học kỹ năng từ Skill Tree."
-        ),
-        inline=False
-    )
-    embed.add_field(
-        name="🏰 Clan & Kinh Tế",
-        value=(
-            "`!Tclan create <tên>` - Tạo Clan (Cần Lv3+ và 3,000 Yên).\n"
-            "`!Tshop` / `!Tinventory` / `!Tuse <món>` - Cửa hàng & Túi đồ.\n"
-            "`!profile` - Xem chỉ số, Qpoint, Skill Points."
-        ),
-        inline=False
-    )
-    await ctx.send(embed=embed)
-
+# -------------------- PROFILE & DAILY --------------------
 @bot.command(name="Tdaily")
 async def daily_reward(ctx):
     p = get_player(ctx.author.id)
@@ -471,7 +514,7 @@ async def daily_reward(ctx):
             remaining = timedelta(hours=12) - (now - last_time)
             hours, remainder = divmod(int(remaining.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
-            return await ctx.send(f"⏳ Bạn đã nhận quà rồi! Quay lại sau **{hours}h {minutes}m {seconds}s**.")
+            return await ctx.send(f"⏳ Quay lại sau **{hours}h {minutes}m {seconds}s**.")
 
     reward_yen = 1000 + (p["level"] * 250)
     reward_exp = 50 + (p["level"] * 15)
@@ -489,9 +532,7 @@ async def profile(ctx):
     c_name, _ = get_player_clan(ctx.author.id)
     clan_str = f"🏰 **{c_name}** (+15% ATK)" if c_name else "Chưa có"
     
-    trait_info = "Không có"
-    if p.get("trait"):
-        trait_info = f"🌀 **{p['trait']['name']}**\n*{p['trait']['desc']}*"
+    trait_info = f"🌀 **{p['trait']['name']}**\n*{p['trait']['desc']}*" if p.get("trait") else "Không có"
 
     embed = discord.Embed(title=f"📜 Bảng Chỉ Số: {ctx.author.display_name}", color=discord.Color.gold())
     embed.add_field(name="Level", value=f"Lv.{p['level']} (SP: {p['sp']})", inline=True)
@@ -504,6 +545,7 @@ async def profile(ctx):
     embed.add_field(name="Đặc tính (Trait)", value=trait_info, inline=False)
     await ctx.send(embed=embed)
 
+# -------------------- RPG BATTLE ENGINE --------------------
 async def run_battle_engine(ctx, enemy_data, is_boss=False):
     p = get_player(ctx.author.id)
     c_name, _ = get_player_clan(ctx.author.id)
@@ -629,7 +671,6 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                 await status_msg.edit(embed=battle_status(f"🎉 CHIẾN THẮNG! Nhận {exp_reward} EXP và ¥{yen_reward:,}{lvl_up_msg}"))
                 break
 
-            # Lượt địch
             if dodge_chance > 0 and random.random() < dodge_chance:
                 e_action_log = "⚡ Né đòn thành công!"
             else:
