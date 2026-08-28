@@ -5,6 +5,7 @@ import asyncio
 import threading
 import json
 import random
+import uuid
 from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
@@ -39,6 +40,7 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 DATA_PATH = "moderation_data.json"
 RPG_DATA_PATH = "rpg_data.json"
 CLAN_DATA_PATH = "clan_data.json"
+CODES_DATA_PATH = "codes_data.json"  # Lưu trữ các code độc quyền và lịch sử nhập
 
 DEFAULT_DATA = {"auto_mod": True, "blacklist": []}
 
@@ -62,6 +64,7 @@ def save_json(path, data):
 moderation_data = load_json(DATA_PATH, DEFAULT_DATA)
 rpg_data = load_json(RPG_DATA_PATH, {})
 clan_data = load_json(CLAN_DATA_PATH, {})
+codes_data = load_json(CODES_DATA_PATH, {"valid_codes": {}, "used_records": []})
 
 def get_player(user_id):
     uid = str(user_id)
@@ -140,7 +143,9 @@ SKILL_TREE = {
     "chronos_delay": {"name": "Time-Lag Punch", "cost": 0, "type": "active", "mp_cost": 30, "desc": "Đòn đánh làm lệch nhịp độ đối thủ."},
     "freedom_flash": {"name": "Unpredictable Flash", "cost": 0, "type": "active", "mp_cost": 30, "desc": "Bay nhảy tự do tung đòn bất định."},
     "slugger_power": {"name": "Devastating Slugger Hook", "cost": 0, "type": "active", "mp_cost": 35, "desc": "Cú đấm uy lực hủy diệt phòng thủ."},
-    "ippo_dempsey": {"name": "Dempsey Roll", "cost": 0, "type": "active", "mp_cost": 40, "desc": "Vòng xoáy số 8 huyền thoại kết liễu kẻ thù."}
+    "ippo_dempsey": {"name": "Dempsey Roll", "cost": 0, "type": "active", "mp_cost": 40, "desc": "Vòng xoáy số 8 huyền thoại kết liễu kẻ thù."},
+    "tiger_strike": {"name": "Tiger Fang Rush", "cost": 0, "type": "active", "mp_cost": 25, "desc": "Mãnh hổ vồ mồi sát thương chí mạng."},
+    "demon_aura": {"name": "Demon Bloodlust", "cost": 0, "type": "active", "mp_cost": 35, "desc": "Sát khí quỷ dạ xoa bộc phát hủy diệt."}
 }
 
 STYLES = {
@@ -153,7 +158,9 @@ STYLES = {
     "chronos": {"name": "Chronos", "rarity": "legend", "base_price": 15000, "atk_mod": 1.35, "hp_mod": 1.20, "skills": ["chronos_delay", "crossover", "heal"], "desc": "Kiểm soát nhịp độ trận đấu."},
     "freedom": {"name": "Freedom", "rarity": "legend", "base_price": 18000, "atk_mod": 1.40, "hp_mod": 1.15, "skills": ["freedom_flash", "crossover", "rest"], "desc": "Lối đánh linh hoạt bất định."},
     "slugger": {"name": "Slugger", "rarity": "myth", "base_price": 35000, "atk_mod": 1.50, "hp_mod": 1.30, "skills": ["slugger_power", "crossover", "heal"], "desc": "Sức mạnh tối thượng phá vỡ phòng thủ."},
-    "ippo": {"name": "Ippo", "rarity": "myth", "base_price": 50000, "atk_mod": 1.60, "hp_mod": 1.40, "skills": ["ippo_dempsey", "crossover", "heal"], "desc": "Tuyệt kỹ Dempsey Roll huyền thoại."}
+    "ippo": {"name": "Ippo", "rarity": "myth", "base_price": 50000, "atk_mod": 1.60, "hp_mod": 1.40, "skills": ["ippo_dempsey", "crossover", "heal"], "desc": "Tuyệt kỹ Dempsey Roll huyền thoại."},
+    "tiger_fang": {"name": "Tiger Fang", "rarity": "legend", "base_price": 20000, "atk_mod": 1.42, "hp_mod": 1.25, "skills": ["tiger_strike", "crossover", "heal"], "desc": "Phong cách mãnh hổ khát máu."},
+    "demon_back": {"name": "Demon Back", "rarity": "myth", "base_price": 65000, "atk_mod": 1.70, "hp_mod": 1.50, "skills": ["demon_aura", "crossover", "heal"], "desc": "Sức mạnh đỉnh cao hóa quỷ."},
 }
 
 RARITY_COLORS = {
@@ -165,7 +172,6 @@ BOSSES = [
     {"name": "Sentry (Marvel)", "hp": 1050, "atk": 85, "exp": 1500, "yen": 42000}
 ]
 
-# Đã giảm sức mạnh (giảm HP và ATK) của quái thường
 REGULAR_ENEMIES = [
     {"name": "Quickbullet", "hp": 85, "atk": 11, "exp": 45, "yen": 900},
     {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 55, "atk": 6, "exp": 20, "yen": 300},
@@ -204,9 +210,10 @@ async def thelps_command(ctx, category: str = "main"):
         p = get_player(ctx.author.id)
         embed = discord.Embed(title="🛒 CỬA HÀNG VẬT PHẨM & STYLES", description="Giá cả thay đổi linh hoạt theo Level hiện tại của bạn.", color=discord.Color.green())
         
+        box_price = get_scaled_price(2500, p["level"])
         style_summary = "\n".join([f"`{sid}` - {s['name']} : **¥{get_scaled_price(s['base_price'], p['level']):,}**" for sid, s in list(STYLES.items())[:5]])
         embed.add_field(name="🥊 MỘT SỐ UBG STYLES TIÊU BIỂU", value=style_summary + "\n*(Xem đầy đủ tại !Thelps style)*", inline=False)
-        embed.add_field(name="🥤 VẬT PHẨM ĐẶC BIỆT", value="`stamina` - Sữa Stamina (¥300)\n`bento` - Hộp Bento (¥800)\n`mystery_box` - 🎁 Hộp Bí Ẩn Yên & EXP (¥2,500)", inline=False)
+        embed.add_field(name="🥤 VẬT PHẨM ĐẶC BIỆT", value=f"`stamina` - Sữa Stamina (¥300)\n`bento` - Hộp Bento (¥800)\n`mystery_box` - 🎁 Hộp Bí Ẩn Yên, EXP & Cơ hội nhận Code Siêu Hiếm (**¥{box_price:,}**)", inline=False)
         embed.set_footer(text="Dùng: !Tshop buy <mã> hoặc !Tshop buy_style <mã> hoặc !Qshop!")
         return await ctx.send(embed=embed)
 
@@ -229,29 +236,71 @@ async def thelps_command(ctx, category: str = "main"):
         )
 
         embed.add_field(
-            name="🎁 **HÀNG NGÀY & NHIỆM VỤ (NPC AN NGUYỄN)**",
+            name="🎁 **HÀNG NGÀY, NHIỆM VỤ & CODE**",
             value=(
                 "`!daily` : Nhận quà điểm danh hằng ngày.\n"
                 "`!daily_quest` : Nhận & hoàn thành nhiệm vụ từ NPC An Nguyễn kiếm Qpoint.\n"
+                "`!redeem <code>` : Nhập mã quà tặng đặc biệt (Hộp bí ẩn tỷ lệ 0.02%).\n"
                 "`!Qshop` : Mở cửa hàng đổi thưởng bằng điểm Qpoint."
             ),
             inline=False
         )
 
         embed.add_field(
-            name="⚔️ **CHIẾN ĐẤU & GACHA**",
+            name="⚔️ **CHIẾN ĐẤU & MÔ PHỎNG**",
             value=(
-                "`!battle` : Đấu đường phố (Quái đã được giảm sức mạnh).\n"
+                "`!battle` : Đấu đường phố.\n"
+                "`!Ttrain` : Vào chế độ tập luyện (Tăng EXP, giảm Yên).\n"
                 "`!Tboss` : Khiêu chiến Boss thế giới (Level 5+).\n"
-                "`!Tpvp @user <số_yen>` : Thách đấu PvP với người chơi khác.\n"
-                "`!Tshop buy <mã>` hoặc `!Tshop buy_style <mã>` : Mua vật phẩm hoặc Style.\n"
-                "`!Tuse <vật_phẩm>` : Sử dụng vật phẩm trong túi đồ."
+                "`!Tsimulator @user` : Mô phỏng thông số, style & kỹ năng của người chơi khác để chiến đấu (Phần thưởng nhỉnh hơn đấu thường).\n"
+                "`!Tpvp @user <số_yen>` : Thách đấu PvP với người chơi khác."
             ),
             inline=False
         )
 
         embed.set_footer(text="Gõ !Thelps style hoặc !Thelps shop để tra cứu chi tiết!")
         await ctx.send(embed=embed)
+
+# -------------------- COMMAND: REDEEM CODE --------------------
+@bot.command(name="redeem")
+async def redeem_command(ctx, code_str: str = None):
+    if not code_str:
+        return await ctx.send("⚠️ Vui lòng nhập mã code! Ví dụ: `!redeem BOX-ABC123`")
+    
+    code = code_str.strip().upper()
+    p = get_player(ctx.author.id)
+    uid = str(ctx.author.id)
+
+    valid_dict = codes_data.get("valid_codes", {})
+    used_records = codes_data.get("used_records", [])
+
+    # Kiểm tra xem code có tồn tại không
+    if code not in valid_dict:
+        return await ctx.send("❌ Mã quà tặng không tồn tại hoặc đã hết hạn!")
+
+    # Kiểm tra xem người dùng đã dùng code này chưa
+    for record in used_records:
+        if record["code"] == code and record["user_id"] == uid:
+            return await ctx.send("⚠️ Bạn đã sử dụng mã này rồi! Mỗi code chỉ được nhập một lần duy nhất.")
+
+    # Tiến hành trả thưởng (5M Yên, 25000 EXP)
+    reward_yen = 5000000
+    reward_exp = 25000
+
+    p["yen"] += reward_yen
+    p["exp"] += reward_exp
+    leveled = check_level_up(p)
+
+    # Đánh dấu code đã được sử dụng bởi user này
+    used_records.append({"code": code, "user_id": uid, "time": datetime.utcnow().isoformat()})
+    
+    # Xóa code khỏi danh sách valid để nó chỉ nhập được đúng một lần duy nhất toàn hệ thống
+    del valid_dict[code]
+    save_json(CODES_DATA_PATH, codes_data)
+    save_json(RPG_DATA_PATH, rpg_data)
+
+    lvl_up_str = "\n⚡ **BẠN ĐÃ ĐẠT CẤP ĐỘ MỚI!**" if leveled else ""
+    await ctx.send(f"🎉 **NHẬP CODE THÀNH CÔNG!**\n🎁 Phần thưởng nhận được:\n- 💰 **+¥5,000,000 Yên**\n- ⚡ **+25,000 EXP**{lvl_up_str}")
 
 # -------------------- DAILY & NPC AN NGUYỄN QUESTS --------------------
 @bot.command(name="daily")
@@ -332,8 +381,8 @@ async def daily_quest(ctx, action: str = None):
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎉 **NHẬN THƯỞNG THÀNH CÔNG!** Nhận ¥{y_rew:,} Yên, {e_rew} EXP và ⭐ {q_rew} Qpoint từ NPC An Nguyễn.")
 
-# -------------------- ADVANCED BATTLE ENGINE (LEVEL SCALING) --------------------
-async def run_battle_engine(ctx, enemy_data, is_boss=False):
+# -------------------- ADVANCED BATTLE ENGINE (LEVEL SCALING, TRAINING & SIMULATOR) --------------------
+async def run_battle_engine(ctx, enemy_data, is_boss=False, is_training=False, custom_skills=None):
     p = get_player(ctx.author.id)
 
     if p.get("in_battle", False):
@@ -351,14 +400,27 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         e_max_hp = e_hp
         e_atk = int(enemy_data["atk"] * scale)
         
-        exp_reward = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.2))
-        yen_reward = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.25))
+        base_exp = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.2))
+        base_yen = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.25))
+
+        # Điều chỉnh phần thưởng nếu ở chế độ Tập Luyện hoặc Mô Phỏng
+        if is_training:
+            exp_reward = int(base_exp * 1.5)
+            yen_reward = int(base_yen * 0.4)
+        elif custom_skills is not None:  # Chế độ mô phỏng (!Tsimulator) thưởng nhỉnh hơn đấu thường khoảng 20%
+            exp_reward = int(base_exp * 1.2)
+            yen_reward = int(base_yen * 1.2)
+        else:
+            exp_reward = base_exp
+            yen_reward = base_yen
 
         st_id = p.get("equipped_style")
         st_mod_atk, st_mod_hp = (STYLES[st_id]["atk_mod"], STYLES[st_id]["hp_mod"]) if st_id and st_id in STYLES else (1.0, 1.0)
 
         p_hp_max = int(p["hp_max"] * st_mod_hp)
         p_hp = p_hp_max
+        e_mp_max = 50
+        e_mp = 50
         p_mp_max = p["mp_max"]
         p_mp = p_mp_max
         
@@ -385,9 +447,10 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
 
         def battle_status(log_msg=""):
             style_str = f" [{STYLES[st_id]['name']}]" if st_id else ""
+            mode_title = " (🏋️ TẬP LUYỆN)" if is_training else (" (🤖 MÔ PHỎNG TSLATOR)" if custom_skills is not None else "")
             embed = discord.Embed(
-                title=f"🥊 {ctx.author.display_name}{style_str} (Lv.{p['level']})  VS  {e_name} (Lv.{p['level']})", 
-                color=discord.Color.red() if is_boss else discord.Color.orange()
+                title=f"🥊 {ctx.author.display_name}{style_str} (Lv.{p['level']}){mode_title}  VS  {e_name} (Lv.{p['level']})", 
+                color=discord.Color.blue() if is_training else (discord.Color.purple() if custom_skills is not None else discord.Color.orange())
             )
 
             p_bar_hp = make_bar(p_hp, p_hp_max, 8, "🟩", "⬛")
@@ -452,16 +515,38 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                     await status_msg.edit(embed=battle_status(f"🎉 CHIẾN THẮNG! Nhận {exp_reward} EXP và ¥{yen_reward:,}{lvl_up_str}"))
                     break
 
-                e_dmg = random.randint(e_atk - 2, e_atk + 6)
-                if is_defending: e_dmg = int(e_dmg * 0.5)
+                # Lượt phản công của Enemy / Mô phỏng
+                e_action_desc = ""
+                e_dmg = 0
+                
+                # Nếu là chế độ mô phỏng (!Tsimulator), đối thủ bot có thể thỉnh thoảng dùng skill của style người được mô phỏng
+                if custom_skills and len(custom_skills) > 0 and e_mp >= 15 and random.random() < 0.35:
+                    e_mp -= 15
+                    chosen_skill_id = random.choice(custom_skills)
+                    skill_name = SKILL_TREE.get(chosen_skill_id, {}).get("name", "Tuyệt kỹ đặc biệt")
+                    e_dmg = int(e_atk * 1.8)
+                    if is_defending: e_dmg = int(e_dmg * 0.5)
+                    e_action_desc = f"🤖 Bản mô phỏng dùng **{skill_name}**"
+                else:
+                    e_dmg = random.randint(e_atk - 2, e_atk + 6)
+                    if is_defending: e_dmg = int(e_dmg * 0.5)
+                    e_action_desc = f"{e_name} đánh trả"
+
                 p_hp -= e_dmg
 
                 if p_hp <= 0:
                     p_hp = 0
-                    await status_msg.edit(embed=battle_status(f"💀 THẤT BẠI trước {e_name}..."))
+                    consolation_exp = max(1, int(exp_reward * 0.15))
+                    consolation_yen = max(1, int(yen_reward * 0.15))
+                    p["exp"] += consolation_exp
+                    p["yen"] += consolation_yen
+                    leveled = check_level_up(p)
+                    lvl_up_str = "\n⚡ **BẠN ĐÃ LÊN CẤP ĐỘ MỚI!**" if leveled else ""
+
+                    await status_msg.edit(embed=battle_status(f"💀 THẤT BẠI trước {e_name}... Hỗ trợ an ủi: **+{consolation_exp} EXP** và **+¥{consolation_yen:,} Yên** (15%).{lvl_up_str}"))
                     break
 
-                await status_msg.edit(embed=battle_status(f"{p_action_log}\n{e_name} đánh trả gây **{e_dmg}** sát thương!"))
+                await status_msg.edit(embed=battle_status(f"{p_action_log}\n{e_action_desc} gây **{e_dmg}** sát thương!"))
 
             except asyncio.TimeoutError:
                 await ctx.send("Quá thời gian lựa chọn!")
@@ -470,6 +555,47 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
     finally:
         p["in_battle"] = False
         save_json(RPG_DATA_PATH, rpg_data)
+
+# -------------------- COMMAND: TSIMULATOR --------------------
+@bot.command(name="Tsimulator")
+async def tsimulator_command(ctx, target_member: discord.Member = None):
+    if not target_member:
+        return await ctx.send("⚠️ Vui lòng tag người chơi muốn mô phỏng! Ví dụ: `!Tsimulator @user`")
+    if target_member.bot:
+        return await ctx.send("⚠️ Không thể mô phỏng dữ liệu của Bot!")
+
+    target_p = get_player(target_member.id)
+    target_style_id = target_p.get("equipped_style")
+    
+    # Lấy thông tin style và skill của người mục tiêu
+    if target_style_id and target_style_id in STYLES:
+        t_style_name = STYLES[target_style_id]["name"]
+        t_skills = STYLES[target_style_id]["skills"]
+        t_atk_mod = STYLES[target_style_id]["atk_mod"]
+        t_hp_mod = STYLES[target_style_id]["hp_mod"]
+    else:
+        t_style_name = "Basic (Không trang bị Style)"
+        t_skills = ["basic_jab", "heal"]
+        t_atk_mod = 1.0
+        t_hp_mod = 1.0
+
+    simulated_enemy = {
+        "name": f"Bản Mô Phỏng ({target_member.display_name})",
+        "hp": int(target_p["hp_max"] * t_hp_mod),
+        "atk": int(target_p["atk"] * t_atk_mod),
+        "exp": 180,
+        "yen": 1200
+    }
+
+    await ctx.send(
+        f"🛡️ **KHỞI TẠO CHẾ ĐỘ MÔ PHỎNG (!TSIMULATOR)**\n"
+        f"Đã sao chép thành công thực thể từ **{target_member.display_name}**:\n"
+        f"- **Style**: {t_style_name}\n"
+        f"- **Kỹ năng chiến đấu**: {', '.join([SKILL_TREE[s]['name'] for s in t_skills if s in SKILL_TREE])}\n"
+        f"*Trận đấu mô phỏng chính thức bắt đầu với phần thưởng ưu đãi +20%!*"
+    )
+
+    await run_battle_engine(ctx, simulated_enemy, is_boss=False, is_training=False, custom_skills=t_skills)
 
 # -------------------- SHOP, QSHOP & USABLE ITEMS --------------------
 @bot.command(name="Tshop")
@@ -484,10 +610,11 @@ async def shop_command(ctx, action: str = None, item_code: str = None):
         if not item_code: return await ctx.send("Nhập mã vật phẩm muốn mua! Ví dụ: `!Tshop buy mystery_box`")
         code = item_code.lower()
 
+        mystery_box_price = get_scaled_price(2500, p["level"])
         prices = {
             "stamina": 300,
             "bento": 800,
-            "mystery_box": 2500
+            "mystery_box": mystery_box_price
         }
 
         if code not in prices: return await ctx.send("Mã vật phẩm không tồn tại trong cửa hàng Yên!")
@@ -577,15 +704,25 @@ async def use_item(ctx, item_code: str = None):
 
     if code == "mystery_box":
         lvl = p["level"]
-        # Đã giảm phần thưởng nhận từ hộp bí ẩn
-        yen_drop = random.randint(1000, 4000) * lvl
-        exp_drop = random.randint(200, 800) * lvl
+        yen_drop = random.randint(500, 2000) * lvl
+        exp_drop = random.randint(100, 400) * lvl
         p["yen"] += yen_drop
         p["exp"] += exp_drop
+        
+        # ----------------- TỈ LỆ 0.02% XUẤT HIỆN CODE SIÊU HIẾM -----------------
+        code_spawned_str = ""
+        chance = random.uniform(0, 100)
+        if chance <= 0.02:  # Tỉ lệ 0.02%
+            new_code = f"BOX-{uuid.uuid4().hex[:6].upper()}"
+            codes_data["valid_codes"][new_code] = {"reward_yen": 5000000, "reward_exp": 25000}
+            save_json(CODES_DATA_PATH, codes_data)
+            code_spawned_str = f"\n\n🚨 **QUÁ MAY MẮN!** Hộp bí ẩn đã rơi ra một **MÃ CODE ĐẶC BIỆT**: `{new_code}`\n*(Phần thưởng: 5,000,000 Yên & 25,000 EXP. Code chỉ nhập được một lần duy nhất qua lệnh `!redeem <code>`)*"
+
         leveled = check_level_up(p)
         save_json(RPG_DATA_PATH, rpg_data)
+        
         lvl_str = "\n⚡ **BẠN ĐÃ LÊN CẤP!**" if leveled else ""
-        await ctx.send(f"🎁 **MỞ HỘP BÍ ẨN (Level {lvl})**\n🎉 Bạn nhận được: **¥{yen_drop:,} Yên** và **{exp_drop} EXP**!{lvl_str}")
+        await ctx.send(f"🎁 **MỞ HỘP BÍ ẨN (Level {lvl})**\n🎉 Bạn nhận được: **¥{yen_drop:,} Yên** và **{exp_drop} EXP**!{lvl_str}{code_spawned_str}")
 
     elif code == "lucky_spin":
         val = random.randint(3000, 15000) * p["level"]
@@ -651,7 +788,7 @@ async def tpvp_command(ctx, opponent: discord.Member = None, bet_yen: int = 0):
     if not opponent:
         return await ctx.send("⚠️ Vui lòng tag người muốn thách đấu! Ví dụ: `!Tpvp @user 5000`")
     if opponent.bot:
-        return x if (x := "⚠️ Không thể đấu với Bot!") else ctx.send(x)
+        return await ctx.send("⚠️ Không thể đấu với Bot!")
     if opponent == ctx.author:
         return await ctx.send("⚠️ Bạn không thể tự đấu với chính mình!")
 
@@ -676,7 +813,6 @@ async def tpvp_command(ctx, opponent: discord.Member = None, bet_yen: int = 0):
     except asyncio.TimeoutError:
         return await ctx.send("⏳ Lời thách đấu PvP đã hết hạn do đối thủ không phản hồi.")
 
-    # Bắt đầu trận chiến PvP
     p1["yen"] -= bet_yen
     p2["yen"] -= bet_yen
     save_json(RPG_DATA_PATH, rpg_data)
@@ -755,18 +891,24 @@ async def profile(ctx):
     embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh hoặc !Tinventory xem túi đồ!")
     await ctx.send(embed=embed)
 
-# -------------------- COMMANDS CHIẾN ĐẤU --------------------
+# -------------------- COMMANDS CHIẾN ĐẤU & TẬP LUYỆN --------------------
 @bot.command(name="battle")
 async def battle_command(ctx):
     enemy = random.choice(REGULAR_ENEMIES)
-    await run_battle_engine(ctx, enemy, is_boss=False)
+    await run_battle_engine(ctx, enemy, is_boss=False, is_training=False)
+
+@bot.command(name="Ttrain")
+async def train_command(ctx):
+    enemy = random.choice(REGULAR_ENEMIES)
+    await ctx.send("🏋️ Bạn bước vào phòng tập thể lực khắc nghiệt! (Tăng mạnh lượng EXP nhận được, giảm tiền thưởng Yên).")
+    await run_battle_engine(ctx, enemy, is_boss=False, is_training=True)
 
 @bot.command(name="Tboss")
 async def boss_command(ctx):
     p = get_player(ctx.author.id)
     if p["level"] < 5: return await ctx.send("⚠️ Cần đạt Level 5 trở lên để khiêu chiến Boss!")
     boss = random.choice(BOSSES)
-    await run_battle_engine(ctx, boss, is_boss=True)
+    await run_battle_engine(ctx, boss, is_boss=True, is_training=False)
 
 # -------------------- KHỞI ĐỘNG --------------------
 @bot.event
