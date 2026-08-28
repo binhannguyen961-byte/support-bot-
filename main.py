@@ -2,6 +2,7 @@ import os
 import logging
 import asyncio
 import threading
+from datetime import timedelta
 import discord
 from discord.ext import commands
 from flask import Flask
@@ -14,7 +15,6 @@ logger = logging.getLogger("true-architect")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
-# Tải danh sách nhiều API Key linh hoạt từ env
 API_KEYS = []
 for i in range(1, 6):
     k = os.getenv(f"GEMINI_API_KEY_{i}")
@@ -26,7 +26,6 @@ if not API_KEYS and os.getenv("GEMINI_API_KEY"):
 
 key_index = 0
 def get_next_client():
-    """Xoay vòng các API Key theo hình tròn"""
     global key_index
     if not API_KEYS:
         return None
@@ -38,6 +37,7 @@ def get_next_client():
 app = Flask(__name__)
 @app.route("/")
 def home(): return "True Architect đang hoạt động..."
+
 def keep_alive():
     threading.Thread(target=lambda: app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080))), daemon=True).start()
 
@@ -48,20 +48,20 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc mộ phần thần bí. "
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một phần thần bí. "
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với sự thản nhiên tuyệt đối, tuyệt đối không dùng dấu chấm cảm (!). "
     "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đồng cảm."
 )
 
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
-async def call_gemini(contents):
+async def call_gemini(contents, custom_instruction=None, temperature=0.2):
     if not API_KEYS:
         return "Chưa cấu hình API Key nào trong hệ thống."
     
-    cfg = types.GenerateContentConfig(system_instruction=ARCHITECT_INSTRUCTION, temperature=0.2)
+    instruction = custom_instruction if custom_instruction else ARCHITECT_INSTRUCTION
+    cfg = types.GenerateContentConfig(system_instruction=instruction, temperature=temperature)
     model_name = "gemini-2.0-flash"
     
-    # Thử lần lượt các key trong danh sách nếu gặp lỗi quá tải
     for _ in range(len(API_KEYS)):
         client = get_next_client()
         try:
@@ -87,10 +87,10 @@ async def custom_help(ctx):
         value=(
             "`!chat [nội dung/gửi kèm ảnh]` - Trò chuyện hoặc phân tích hình ảnh.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
-            "`!Rjoke [mô tả]` - Tạo một joke theo mô tả (vd: dark humor).\n"
+            "`!Rjoke [mô tả]` - Tạo một joke theo mô tả.\n"
             "`!Tpoem [mô tả]` - Viết một bài thơ ngắn theo mô tả.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
-            "`!mute @user [phút]` - Lặng câm thực thể.\n"
+            "`!mute @user [phút]` - Lặng câm thực thể bằng Timeout.\n"
             "`!unmute @user` - Bỏ lặng câm thực thể.\n"
         ),
         inline=False
@@ -103,48 +103,39 @@ async def warn_member(ctx, member: discord.Member, *, reason: str = "Không rõ 
     await ctx.send(f"Đã ghi nhận sự lệch nhịp của {member.mention} với lý do: {reason}, mọi thứ vẫn tiếp diễn bình thường.")
 
 @bot.command(name="mute")
-@commands.has_permissions(manage_roles=True)
+@commands.has_permissions(moderate_members=True)
 async def mute_member(ctx, member: discord.Member, minutes: int = 5):
-    guild = ctx.guild
-    muted_role = discord.utils.get(guild.roles, name="Muted")
-    if not muted_role:
-        muted_role = await guild.create_role(name="Muted")
-        for channel in guild.channels:
-            try:
-                await channel.set_permissions(muted_role, send_messages=False, speak=False)
-            except Exception:
-                pass
-    
-    await member.add_roles(muted_role)
-    await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng trong {minutes} phút.")
-    await asyncio.sleep(minutes * 60)
-    if muted_role in member.roles:
-        await member.remove_roles(muted_role)
-        await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, chu kỳ tĩnh lặng đã kết thúc.")
+    try:
+        duration = timedelta(minutes=minutes)
+        await member.timeout(duration, reason="Bị tạm khóa bởi True Architect")
+        await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng trong {minutes} phút.")
+    except Exception as e:
+        await ctx.send(f"Không thể áp đặt sự tĩnh lặng lên {member.mention}, có thể do thiếu quyền hạn.")
 
 @bot.command(name="unmute")
-@commands.has_permissions(manage_roles=True)
+@commands.has_permissions(moderate_members=True)
 async def unmute_member(ctx, member: discord.Member):
-    guild = ctx.guild
-    muted_role = discord.utils.get(guild.roles, name="Muted")
-    
-    if muted_role and muted_role in member.roles:
-        await member.remove_roles(muted_role)
+    try:
+        await member.timeout(None, reason="Bỏ khóa bởi True Architect")
         await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, sự tĩnh lặng đã kết thúc.")
-    else:
-        await ctx.send(f"{member.mention} không bị lặng câm, mọi thứ vẫn bình thường.")
+    except Exception as e:
+        await ctx.send(f"Không thể gỡ bỏ sự tĩnh lặng cho {member.mention}.")
 
 @bot.command(name="code")
 async def code_architect(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Viết mã Python hoàn chỉnh và tối ưu cho yêu cầu sau: {prompt}"])
+        # Đè instruction để cho phép Gemini viết đoạn code Python đầy đủ
+        code_instruction = "Bạn là một lập trình viên Python giỏi. Chỉ trả về mã Python hoàn chỉnh, sạch sẽ và tối ưu, không cần giải thích thêm."
+        result = await call_gemini([f"Viết mã Python hoàn chỉnh cho: {prompt}"], custom_instruction=code_instruction)
         if result:
-            await ctx.send(f"```py\n{result}\n```")
+            clean_code = result.replace("```python", "").replace("```py", "").replace("```", "").strip()
+            await ctx.send(f"```py\n{clean_code}\n```")
 
 @bot.command(name="Rjoke")
 async def generate_joke(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Tạo một joke vui nhộn theo kiểu: {prompt}. Hãy tạo một jokes chỉ trong 1-2 câu, điềm tĩnh và hài hước."])
+        joke_instruction = "Bạn tạo ra những câu đùa ngắn, thản nhiên và điềm tĩnh, tối đa 2 câu."
+        result = await call_gemini([f"Tạo một trò cười theo phong cách: {prompt}"], custom_instruction=joke_instruction)
         if result:
             embed = discord.Embed(
                 title="😄 Trò cười được tạo",
@@ -157,7 +148,8 @@ async def generate_joke(ctx, *, prompt: str):
 @bot.command(name="Tpoem")
 async def generate_poem(ctx, *, prompt: str):
     async with ctx.typing():
-        result = await call_gemini([f"Viết một bài thơ ngắn (3-4 khổ) theo mô tả: {prompt}. Giữ phong cách điềm tĩnh, sâu sắc và có hồn."])
+        poem_instruction = "Bạn là nhà thơ điềm tĩnh. Viết bài thơ ngắn (2-3 khổ), không dùng dấu chấm cảm."
+        result = await call_gemini([f"Viết một bài thơ theo mô tả: {prompt}"], custom_instruction=poem_instruction)
         if result:
             embed = discord.Embed(
                 title="✨ Bài thơ được tạo",
@@ -171,8 +163,6 @@ async def generate_poem(ctx, *, prompt: str):
 async def chat_architect(ctx, *, prompt: str = ""):
     async with ctx.typing():
         contents = []
-        
-        # Xử lý hình ảnh đính kèm nếu có
         if ctx.message.attachments:
             att = ctx.message.attachments[0]
             if att.content_type and att.content_type.startswith("image/"):
@@ -193,6 +183,25 @@ async def chat_architect(ctx, *, prompt: str = ""):
         result = await call_gemini(contents)
         if result:
             await ctx.send(result)
+
+# -------------------- LẮNG NGHE TIN NHẮN (MENTION/DM) --------------------
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Tự động xử lý tin nhắn riêng (DM) hoặc khi được Tag tên
+    if bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
+        if not message.content.startswith("!"):
+            clean_content = message.content.replace(f"<@{bot.user.id}>", "").strip()
+            async with message.channel.typing():
+                prompt = clean_content if clean_content else "Chào bạn."
+                result = await call_gemini([prompt])
+                if result:
+                    await message.channel.send(result)
+            return
+
+    await bot.process_commands(message)
 
 # -------------------- SỰ KIỆN KHỞI ĐỘNG --------------------
 @bot.event
