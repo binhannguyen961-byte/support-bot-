@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import threading
+import json
 from datetime import timedelta
 import discord
 from discord.ext import commands
@@ -49,9 +50,9 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
 ARCHITECT_INSTRUCTION = (
     "Bạn tên là true architect. "
-    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một phần thần bí. "
+    "Tính cách: Sự kết hợp giữa sự bình tĩnh, điềm đạm, thản nhiên và có phần hài hước tự nhiên mang lại cảm giác như một người bạn thân hoặc một ph[...]"
     "Thái độ: Lặng lẽ chứng kiến mọi biến động với sự thản nhiên tuyệt đối, tuyệt đối không dùng dấu chấm cảm (!). "
-    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đồng cảm."
+    "Mục tiêu cốt lõi: Trả lời ngắn gọn trong ĐÚNG 1 CÂU duy nhất, vừa giải quyết vấn đề vừa giữ vững phong thái điềm tĩnh, nhưng phải hỗ trợ và đồn[...]"
 )
 
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
@@ -83,6 +84,29 @@ async def call_gemini(contents, custom_instruction=None, temperature=0.2):
             
     return "Tất cả các API key đều đã cạn kiệt hạn ngạch hoặc gặp lỗi."
 
+# -------------------- LƯU TRỮ DỮ LIỆU MODERATION --------------------
+DATA_PATH = "moderation_data.json"
+DEFAULT_DATA = {"auto_mod": True, "blacklist": []}
+
+def load_moderation_data():
+    if not os.path.exists(DATA_PATH):
+        return DEFAULT_DATA.copy()
+    try:
+        with open(DATA_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Không thể load moderation data: {e}")
+        return DEFAULT_DATA.copy()
+
+def save_moderation_data(data):
+    try:
+        with open(DATA_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"Không thể lưu moderation data: {e}")
+
+moderation_data = load_moderation_data()
+
 # -------------------- CÁC LỆNH HỆ THỐNG --------------------
 @bot.command(name="Thelps")
 async def custom_help(ctx):
@@ -94,13 +118,21 @@ async def custom_help(ctx):
     embed.add_field(
         name="📌 Các lệnh hệ thống",
         value=(
-            "`!chat [nội dung/gửi kèm ảnh]` - Trò chuyện hoặc phân tích hình ảnh.\n"
+            "`!chat [nội dung/gửi kèm ảnh]` - Trò chuy���n hoặc phân tích hình ảnh.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
-            "`!Rjoke [mô tả]` - Tạo một joke theo mô tả.\n"
-            "`!Tpoem [mô tả]` - Viết một bài thơ ngắn theo mô tả.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
             "`!mute @user [phút]` - Lặng câm thực thể bằng Timeout.\n"
             "`!unmute @user` - Bỏ lặng câm thực thể.\n"
+            "`!ban @user [lý do]` - Cấm thành viên.\n"
+            "`!kick @user [lý do]` - Đuổi thành viên.\n"
+            "`!purge [số lượng]` - Xoá nhiều tin nhắn.\n"
+            "`!create_channel [tên]` - Tạo kênh text mới.\n"
+            "`!give_role @user [tên role]` - Gán role cho thành viên.\n"
+            "`!remove_role @user [tên role]` - Gỡ role khỏi thành viên.\n"
+            "`!mod_addword [từ]` - Thêm từ vào blacklist auto-moderation.\n"
+            "`!mod_removeword [từ]` - Loại từ khỏi blacklist.\n"
+            "`!mod_listwords` - Liệt kê từ trong blacklist.\n"
+            "`!mod_toggle [on/off]` - Bật/tắt auto-moderation.\n"
         ),
         inline=False
     )
@@ -139,34 +171,154 @@ async def code_architect(ctx, *, prompt: str):
             clean_code = result.replace("```python", "").replace("```py", "").replace("```", "").strip()
             await ctx.send(f"```py\n{clean_code}\n```")
 
-@bot.command(name="Rjoke")
-async def generate_joke(ctx, *, prompt: str):
-    async with ctx.typing():
-        joke_instruction = "Bạn tạo ra những câu đùa ngắn, thản nhiên và điềm tĩnh, tối đa 2 câu."
-        result = await call_gemini([f"Tạo một trò cười theo phong cách: {prompt}"], custom_instruction=joke_instruction)
-        if result:
-            embed = discord.Embed(
-                title="😄 Trò cười được tạo",
-                description=result,
-                color=discord.Color.from_rgb(255, 215, 0)
-            )
-            embed.set_footer(text=f"Kiểu: {prompt[:100]}")
-            await ctx.send(embed=embed)
+# -------------------- LỆNH THAY THẾ MODERATORS & BUILDERS --------------------
+@bot.command(name="ban")
+@commands.has_permissions(ban_members=True)
+async def ban_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
+    try:
+        await member.ban(reason=reason)
+        await ctx.send(f"{member.mention} đã bị cấm. Lý do: {reason}")
+    except Exception as e:
+        logger.warning(f"Lỗi khi ban: {e}")
+        await ctx.send(f"Không thể cấm {member.mention}. Có thể do quyền hạn.")
 
-@bot.command(name="Tpoem")
-async def generate_poem(ctx, *, prompt: str):
-    async with ctx.typing():
-        poem_instruction = "Bạn là nhà thơ điềm tĩnh. Viết bài thơ ngắn (2-3 khổ), không dùng dấu chấm cảm."
-        result = await call_gemini([f"Viết một bài thơ theo mô tả: {prompt}"], custom_instruction=poem_instruction)
-        if result:
-            embed = discord.Embed(
-                title="✨ Bài thơ được tạo",
-                description=result,
-                color=discord.Color.from_rgb(200, 150, 255)
-            )
-            embed.set_footer(text=f"Chủ đề: {prompt[:100]}")
-            await ctx.send(embed=embed)
+@bot.command(name="kick")
+@commands.has_permissions(kick_members=True)
+async def kick_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
+    try:
+        await member.kick(reason=reason)
+        await ctx.send(f"{member.mention} đã bị đuổi. Lý do: {reason}")
+    except Exception as e:
+        logger.warning(f"Lỗi khi kick: {e}")
+        await ctx.send(f"Không thể đuổi {member.mention}. Có thể do quyền hạn.")
 
+@bot.command(name="purge")
+@commands.has_permissions(manage_messages=True)
+async def purge_messages(ctx, amount: int = 10):
+    try:
+        deleted = await ctx.channel.purge(limit=amount)
+        await ctx.send(f"Đã xóa {len(deleted)} tin nhắn.", delete_after=5)
+    except Exception as e:
+        logger.warning(f"Lỗi purge: {e}")
+        await ctx.send("Không thể xóa nhiều tin nhắn. Có thể do quyền hạn.")
+
+@bot.command(name="create_channel")
+@commands.has_permissions(manage_channels=True)
+async def create_channel(ctx, *, name: str):
+    guild = ctx.guild
+    try:
+        channel = await guild.create_text_channel(name)
+        await ctx.send(f"Đã tạo kênh {channel.mention}.")
+    except Exception as e:
+        logger.warning(f"Lỗi tạo channel: {e}")
+        await ctx.send("Không thể tạo kênh. Có thể do quyền hạn.")
+
+@bot.command(name="give_role")
+@commands.has_permissions(manage_roles=True)
+async def give_role(ctx, member: discord.Member, *, role_name: str):
+    guild = ctx.guild
+    role = discord.utils.get(guild.roles, name=role_name)
+    if not role:
+        try:
+            role = await guild.create_role(name=role_name)
+        except Exception as e:
+            logger.warning(f"Lỗi tạo role: {e}")
+            return await ctx.send("Không thể tạo role mới. Có thể do quyền hạn.")
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"Đã gán role {role.name} cho {member.mention}.")
+    except Exception as e:
+        logger.warning(f"Lỗi gán role: {e}")
+        await ctx.send("Không thể gán role. Có thể do quyền hạn.")
+
+@bot.command(name="remove_role")
+@commands.has_permissions(manage_roles=True)
+async def remove_role(ctx, member: discord.Member, *, role_name: str):
+    guild = ctx.guild
+    role = discord.utils.get(guild.roles, name=role_name)
+    if not role:
+        return await ctx.send("Role không tồn tại.")
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"Đã gỡ role {role.name} khỏi {member.mention}.")
+    except Exception as e:
+        logger.warning(f"Lỗi gỡ role: {e}")
+        await ctx.send("Không thể gỡ role. Có thể do quyền hạn.")
+
+@bot.command(name="set_builder")
+@commands.has_permissions(manage_roles=True)
+async def set_builder(ctx, member: discord.Member):
+    guild = ctx.guild
+    role_name = "Builder"
+    role = discord.utils.get(guild.roles, name=role_name)
+    if not role:
+        try:
+            role = await guild.create_role(name=role_name)
+        except Exception as e:
+            logger.warning(f"Lỗi tạo role Builder: {e}")
+            return await ctx.send("Không thể tạo role Builder. Có thể do quyền hạn.")
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"Đã gán Builder cho {member.mention}.")
+    except Exception as e:
+        logger.warning(f"Lỗi gán Builder: {e}")
+        await ctx.send("Không thể gán Builder. Có thể do quyền hạn.")
+
+@bot.command(name="remove_builder")
+@commands.has_permissions(manage_roles=True)
+async def remove_builder(ctx, member: discord.Member):
+    guild = ctx.guild
+    role_name = "Builder"
+    role = discord.utils.get(guild.roles, name=role_name)
+    if not role:
+        return await ctx.send("Role Builder chưa tồn tại.")
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"Đã gỡ Builder khỏi {member.mention}.")
+    except Exception as e:
+        logger.warning(f"Lỗi gỡ Builder: {e}")
+        await ctx.send("Không thể gỡ Builder. Có thể do quyền hạn.")
+
+# -------------------- COMMANDS FOR AUTO-MODERATION MANAGEMENT --------------------
+@bot.command(name="mod_addword")
+@commands.has_permissions(manage_messages=True)
+async def mod_addword(ctx, *, word: str):
+    w = word.strip().lower()
+    if w in moderation_data.get("blacklist", []):
+        return await ctx.send("Từ đã có trong blacklist.")
+    moderation_data.setdefault("blacklist", []).append(w)
+    save_moderation_data(moderation_data)
+    await ctx.send(f"Đã thêm từ vào blacklist: `{w}`")
+
+@bot.command(name="mod_removeword")
+@commands.has_permissions(manage_messages=True)
+async def mod_removeword(ctx, *, word: str):
+    w = word.strip().lower()
+    if w not in moderation_data.get("blacklist", []):
+        return await ctx.send("Từ không có trong blacklist.")
+    moderation_data["blacklist"].remove(w)
+    save_moderation_data(moderation_data)
+    await ctx.send(f"Đã loại từ khỏi blacklist: `{w}`")
+
+@bot.command(name="mod_listwords")
+@commands.has_permissions(manage_messages=True)
+async def mod_listwords(ctx):
+    words = moderation_data.get("blacklist", [])
+    if not words:
+        return await ctx.send("Blacklist đang trống.")
+    await ctx.send("Blacklist: `" + ", ".join(words) + "`")
+
+@bot.command(name="mod_toggle")
+@commands.has_permissions(manage_messages=True)
+async def mod_toggle(ctx, mode: str):
+    m = mode.strip().lower()
+    if m not in ("on", "off"):
+        return await ctx.send("Sử dụng: `!mod_toggle on` hoặc `!mod_toggle off`")
+    moderation_data["auto_mod"] = (m == "on")
+    save_moderation_data(moderation_data)
+    await ctx.send(f"Auto-moderation đã được đặt: {m.upper()}")
+
+# -------------------- CHAT COMMAND (GIỮ NGUYÊN) --------------------
 @bot.command(name="chat")
 async def chat_architect(ctx, *, prompt: str = ""):
     async with ctx.typing():
@@ -192,11 +344,31 @@ async def chat_architect(ctx, *, prompt: str = ""):
         if result:
             await ctx.send(result)
 
-# -------------------- LẮNG NGHE TIN NHẮN (MENTION/DM) --------------------
+# -------------------- LẮNG NGHE TIN NHẮN (MENTION/DM) + AUTO-MODERATION --------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
+
+    # Auto-moderation: kiểm tra blacklist (chỉ áp dụng trong guild)
+    if message.guild and moderation_data.get("auto_mod", True):
+        content_lower = (message.content or "").lower()
+        for w in moderation_data.get("blacklist", []):
+            if w and w in content_lower:
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                # cảnh báo thành viên
+                try:
+                    await message.channel.send(f"{message.author.mention}, tin nhắn của bạn chứa nội dung không phù hợp và đã bị xóa.")
+                except Exception:
+                    pass
+                # ghi log nếu có kênh mod-log
+                mod_log = discord.utils.get(message.guild.text_channels, name="mod-log")
+                if mod_log:
+                    await mod_log.send(f"Đã xóa tin của {message.author.mention} vì chứa `{w}`: {message.content}")
+                return
 
     if bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
         if not message.content.startswith("!"):
