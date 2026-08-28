@@ -109,13 +109,18 @@ def get_player_clan(user_id):
             return clan_name, info
     return None, None
 
+def make_bar(current, maximum, length=10, fill="🟩", empty="⬛"):
+    if maximum <= 0: return empty * length
+    ratio = max(0, min(1, current / maximum))
+    filled = int(ratio * length)
+    return fill * filled + empty * (length - filled)
+
 # -------------------- SKILL TREE & UNTITLED BOXING GAME STYLES --------------------
 SKILL_TREE = {
     "heal": {"name": "Hồi Xuân", "cost": 2, "type": "active", "mp_cost": 20, "desc": "Hồi 40 HP ngay lập tức."},
     "crossover": {"name": "Tuyệt Kỹ Crossover", "cost": 3, "type": "active", "mp_cost": 15, "desc": "Gây 180%-250% sát thương ATK."},
     "rest": {"name": "Rest (Tĩnh Tâm)", "cost": 2, "type": "active", "mp_cost": 0, "desc": "Hồi 15 MP trong trận."},
     
-    # Skills cố định tương ứng theo các Style
     "basic_jab": {"name": "Basic Jab", "cost": 0, "type": "active", "mp_cost": 10, "desc": "Cú đấm cơ bản ổn định."},
     "long_guard_counter": {"name": "Long Guard Counter", "cost": 0, "type": "active", "mp_cost": 15, "desc": "Phòng thủ phản đòn tầm xa."},
     "outbox_swift": {"name": "Swift Footwork", "cost": 0, "type": "active", "mp_cost": 12, "desc": "Di chuyển né tránh và phản công nhanh."},
@@ -129,7 +134,6 @@ SKILL_TREE = {
 }
 
 STYLES = {
-    # COMMON
     "basic": {
         "name": "Basic", "rarity": "common", "price": 1000,
         "atk_mod": 1.0, "hp_mod": 1.0,
@@ -142,7 +146,6 @@ STYLES = {
         "skills": ["long_guard_counter", "heal", "rest"],
         "desc": "Tư thế thủ cao giúp tăng nhẹ khả năng chống đỡ."
     },
-    # RARE
     "out_boxer": {
         "name": "Out-Boxer", "rarity": "rare", "price": 2500,
         "atk_mod": 1.10, "hp_mod": 0.95,
@@ -155,7 +158,6 @@ STYLES = {
         "skills": ["hitman_flicker", "crossover", "heal"],
         "desc": "Góc đánh thấp hiểm hóc với những cú Flicker Jab cấu rỉa."
     },
-    # EPIC
     "challenger": {
         "name": "Challenger", "rarity": "epic", "price": 6000,
         "atk_mod": 1.20, "hp_mod": 1.10,
@@ -168,7 +170,6 @@ STYLES = {
         "skills": ["smash_heavy", "crossover", "heal"],
         "desc": "Sở hữu cú đấm Smash từ dưới lên gây tổn thương diện rộng."
     },
-    # LEGEND
     "chronos": {
         "name": "Chronos", "rarity": "legend", "price": 15000,
         "atk_mod": 1.35, "hp_mod": 1.20,
@@ -181,7 +182,6 @@ STYLES = {
         "skills": ["freedom_flash", "crossover", "rest"],
         "desc": "Lối đánh linh hoạt và phóng khoáng không thể đoán trước."
     },
-    # MYTH
     "slugger": {
         "name": "Slugger", "rarity": "myth", "price": 35000,
         "atk_mod": 1.50, "hp_mod": 1.30,
@@ -221,6 +221,86 @@ REGULAR_ENEMIES = [
     {"name": "Sát Thủ Passione (JoJo Part 5)", "hp": 130, "atk": 16, "exp": 60, "yen": 1200}
 ]
 
+# -------------------- COMMAND GỘP: !Thelps --------------------
+@bot.command(name="Thelps")
+async def thelps_command(ctx, category: str = "main"):
+    cat = category.lower()
+
+    if cat in ["style", "styles"]:
+        p = get_player(ctx.author.id)
+        embed = discord.Embed(
+            title="🥊 TRA CỨU DANH SÁCH UBG STYLES",
+            description="Trang bị Style để nhận bộ kỹ năng cố định và hệ số chỉ số tương ứng!",
+            color=discord.Color.gold()
+        )
+        owned = p.get("owned_styles", [])
+        curr = p.get("equipped_style")
+
+        for sid, sinfo in STYLES.items():
+            status = "⭐ Đang trang bị" if curr == sid else ("✅ Đã sở hữu" if sid in owned else f"❌ Chưa sở hữu (Giá: ¥{sinfo['price']:,})")
+            atk_p = f"+{int((sinfo['atk_mod']-1)*100)}%" if sinfo['atk_mod'] >= 1 else f"{int((sinfo['atk_mod']-1)*100)}%"
+            hp_p = f"+{int((sinfo['hp_mod']-1)*100)}%" if sinfo['hp_mod'] >= 1 else f"{int((sinfo['hp_mod']-1)*100)}%"
+            
+            embed.add_field(
+                name=f"[{RARITY_COLORS[sinfo['rarity']]}] {sinfo['name']} (`{sid}`)",
+                value=f"Trạng thái: **{status}**\nChỉ số: ATK ({atk_p}) | HP ({hp_p})\n*{sinfo['desc']}*",
+                inline=False
+            )
+        embed.set_footer(text="Dùng lệnh: !Tstyle equip <mã_style> | !Tstyle unequip")
+        return await ctx.send(embed=embed)
+
+    elif cat in ["shop", "store"]:
+        embed = discord.Embed(
+            title="🛒 TRA CỨU DANH MỤC CỬA HÀNG",
+            description="Tất cả các vật phẩm và UBG Styles có sẵn trong Shop:",
+            color=discord.Color.green()
+        )
+        style_list = "\n".join([f"`{sid}` - {s['name']} ({RARITY_COLORS[s['rarity']]}) : **¥{s['price']:,} Yên**" for sid, s in STYLES.items()])
+        embed.add_field(name="🥊 UBG STYLES (MUA TRỰC TIẾP)", value=style_list, inline=False)
+        embed.add_field(name="🥤 VẬT PHẨM HỒI PHỤC", value="`stamina` - Hộp sữa Stamina (¥300)\n`bento` - Hộp Bento Kamurocho (¥800)", inline=False)
+        embed.set_footer(text="Dùng: !Tshop buy_style <mã> để mua Style!")
+        return await ctx.send(embed=embed)
+
+    else:
+        embed = discord.Embed(
+            title="🥊 TRUNG TÂM LỆNH SYSTEM (!Thelps)",
+            description="Tất cả các lệnh chính được gộp tại đây. Dùng `!Thelps <mục>` để xem chi tiết từng danh mục!",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="📂 **DANH MỤC TRA CỨU**",
+            value=(
+                "`!Thelps style` : Xem toàn bộ danh sách Boxing Styles, độ hiếm & chỉ số bonus.\n"
+                "`!Thelps shop` : Xem danh mục Cửa hàng Styles & Vật phẩm."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="👤 **HỒ SƠ & TRANG BỊ**",
+            value=(
+                "`!profile` : Xem thẻ thông tin cá nhân, chỉ số, Level và Style đang dùng.\n"
+                "`!Tstyle equip <mã>` : Trang bị Style trong kho đồ.\n"
+                "`!Tstyle unequip` : Tháo Style đang sử dụng."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="⚔️ **CHIẾN ĐẤU & GACHA**",
+            value=(
+                "`!battle` : Đấu đường phố ngẫu nhiên nâng level & kiếm Yên.\n"
+                "`!Tboss` : Khiêu chiến Boss nhận thưởng lớn (Yêu cầu Level 5+).\n"
+                "`!Tshop buy_style <mã>` : Mua Boxing Style bằng Yên.\n"
+                "`!Tuse spin` : Dùng Vé Vòng Quay Ngẫu Nhiên gacha Style/Yên/EXP."
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text="Gõ !Thelps style hoặc !Thelps shop để xem danh sách chi tiết!")
+        await ctx.send(embed=embed)
+
 # -------------------- ADVANCED RPG BATTLE ENGINE --------------------
 async def run_battle_engine(ctx, enemy_data, is_boss=False):
     p = get_player(ctx.author.id)
@@ -243,18 +323,17 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         exp_reward = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.12))
         yen_reward = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.15))
 
-        p_hp, p_mp, p_atk = p["hp_max"], p["mp_max"], p["atk"]
         st_id = p.get("equipped_style")
+        st_mod_atk, st_mod_hp = (STYLES[st_id]["atk_mod"], STYLES[st_id]["hp_mod"]) if st_id and st_id in STYLES else (1.0, 1.0)
+
+        p_hp_max = int(p["hp_max"] * st_mod_hp)
+        p_hp = p_hp_max
+        p_mp_max = p["mp_max"]
+        p_mp = p_mp_max
         
-        if st_id and st_id in STYLES:
-            st = STYLES[st_id]
-            p_atk = int(p_atk * st["atk_mod"])
-            p_hp = int(p_hp * st["hp_mod"])
-
         clan_bonus = 1.15 if c_name else 1.0
-        base_atk = int(p_atk * clan_bonus)
+        base_atk = int(p["atk"] * st_mod_atk * clan_bonus)
 
-        rage_turns = 0
         player_frozen = False
 
         if st_id and st_id in STYLES:
@@ -262,14 +341,14 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         else:
             eq = p.get("equipped_skills", [None, None, None])
 
-        active_menu = {"1": "Đánh thường", "2": "Phòng thủ"}
+        active_menu = {"1": "👊 Đánh thường", "2": "🛡️ Phòng thủ"}
         skill_mapping = {}
 
         opt_idx = 3
         for sid in eq:
             if sid and sid in SKILL_TREE:
                 sinfo = SKILL_TREE[sid]
-                active_menu[str(opt_idx)] = sinfo["name"]
+                active_menu[str(opt_idx)] = f"⚡ {sinfo['name']} ({sinfo.get('mp_cost', 0)} MP)"
                 skill_mapping[str(opt_idx)] = sid
                 opt_idx += 1
 
@@ -278,25 +357,44 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
         def check_msg(m):
             return m.author == ctx.author and m.channel == ctx.channel and m.content in valid_choices
 
-        prefix = f"🔥 **BOSS BẢO VỆ: {enemy_data.get('skill_name', '')}** 🔥" if is_boss else "⚔️ **BATTLE THƯỜNG**"
-        
         def battle_status(log_msg=""):
             style_str = f" [{STYLES[st_id]['name']}]" if st_id else ""
-            embed = discord.Embed(title=f"💥 {ctx.author.display_name}{style_str} VS {e_name}", color=discord.Color.purple())
-            embed.add_field(name=f"👤 {ctx.author.display_name}", value=f"❤️ HP: {p_hp}/{p['hp_max']}\n🧪 MP: {p_mp}/{p['mp_max']}\n⚔️ ATK: {base_atk}", inline=True)
-            embed.add_field(name=f"👹 {e_name}", value=f"❤️ HP: {e_hp}/{e_max_hp}\n⚔️ ATK: {e_atk}", inline=True)
+            embed = discord.Embed(
+                title=f"🥊 {ctx.author.display_name}{style_str}  VS  {e_name}", 
+                color=discord.Color.red() if is_boss else discord.Color.orange()
+            )
+
+            p_bar_hp = make_bar(p_hp, p_hp_max, 8, "🟩", "⬛")
+            p_bar_mp = make_bar(p_mp, p_mp_max, 8, "🟦", "⬛")
+            e_bar_hp = make_bar(e_hp, e_max_hp, 8, "🟥", "⬛")
+
+            p_info = (
+                f"❤️ **HP**: {p_hp}/{p_hp_max}\n{p_bar_hp}\n"
+                f"🧪 **MP**: {p_mp}/{p_mp_max}\n{p_bar_mp}\n"
+                f"⚔️ **ATK**: `{base_atk}`"
+            )
             
-            cmd_text = "\n".join([f"`{k}` - {v}" for k, v in active_menu.items()])
-            embed.add_field(name="📋 Lựa chọn kỹ năng:", value=cmd_text, inline=False)
-            if log_msg: embed.set_footer(text=log_msg)
+            e_info = (
+                f"❤️ **HP**: {e_hp}/{e_max_hp}\n{e_bar_hp}\n\n"
+                f"⚔️ **ATK**: `{e_atk}`"
+            )
+
+            embed.add_field(name=f"🔵 {ctx.author.display_name}", value=p_info, inline=True)
+            embed.add_field(name=f"🔴 {e_name}", value=e_info, inline=True)
+            
+            cmd_text = "\n".join([f"`{k}` : {v}" for k, v in active_menu.items()])
+            embed.add_field(name="🎮 LỰA CHỌN KĨ NĂNG", value=cmd_text, inline=False)
+            
+            if log_msg: 
+                embed.add_field(name="📜 DIỄN BIẾN TRẬN ĐẤU", value=f"> {log_msg}", inline=False)
+                
             return embed
 
-        status_msg = await ctx.send(f"{prefix}", embed=battle_status("Bắt đầu trận đấu!"))
+        status_msg = await ctx.send(embed=battle_status("Bắt đầu trận đấu!"))
 
         while p_hp > 0 and e_hp > 0:
             if player_frozen:
                 player_frozen = False
-                await ctx.send("❄️ **Bạn bị ĐÓNG BĂNG! Mất lượt này.**")
                 e_dmg = random.randint(e_atk - 2, e_atk + 5)
                 p_hp -= e_dmg
                 await status_msg.edit(embed=battle_status(f"❄️ Bị đóng băng! {e_name} đánh gây {e_dmg} sát thương!"))
@@ -315,10 +413,10 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                 if action == "1":
                     dmg = random.randint(base_atk - 3, base_atk + 5)
                     e_hp -= dmg
-                    p_action_log = f"Bạn đánh gây {dmg} sát thương!"
+                    p_action_log = f"Tung đòn đấm thường gây **{dmg}** sát thương!"
                 elif action == "2":
                     is_defending = True
-                    p_action_log = "🛡️ Bạn giơ giáp Phòng Thủ!"
+                    p_action_log = "🛡️ Giơ giáp Phòng Thủ (Giảm 50% sát thương nhận vào)!"
                 else:
                     sid = skill_mapping[action]
                     sinfo = SKILL_TREE[sid]
@@ -331,29 +429,29 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                         if sid in ["crossover", "challenger_rush"]:
                             dmg = int(random.randint(int(base_atk * 1.8), int(base_atk * 2.5)))
                             e_hp -= dmg
-                            p_action_log = f"💥 {sinfo['name']} gây {dmg} sát thương!"
+                            p_action_log = f"💥 Dùng **{sinfo['name']}** gây **{dmg}** sát thương!"
                         elif sid in ["basic_jab", "long_guard_counter", "outbox_swift", "hitman_flicker"]:
                             dmg = int(base_atk * 1.6)
                             e_hp -= dmg
-                            p_action_log = f"🥊 {sinfo['name']} chính xác gây {dmg} sát thương!"
+                            p_action_log = f"🥊 Dùng **{sinfo['name']}** chính xác gây **{dmg}** sát thương!"
                         elif sid == "heal":
-                            p_hp = min(p["hp_max"], p_hp + 40)
-                            p_action_log = "🥤 Dùng Hồi Xuân hồi +40 HP!"
+                            p_hp = min(p_hp_max, p_hp + 40)
+                            p_action_log = "🥤 Dùng **Hồi Xuân** hồi +40 HP!"
                         elif sid == "rest":
-                            p_mp = min(p["mp_max"], p_mp + 15)
-                            p_action_log = "🧘 Dùng Rest hồi +15 MP!"
+                            p_mp = min(p_mp_max, p_mp + 15)
+                            p_action_log = "🧘 Dùng **Rest** hồi +15 MP!"
                         elif sid == "smash_heavy":
                             dmg = int(base_atk * 2.7)
                             e_hp -= dmg
-                            p_action_log = f"💥 Smash Heavy đánh móc trời giáng gây {dmg} sát thương!"
+                            p_action_log = f"💥 Dùng **Smash Heavy** gây **{dmg}** sát thương!"
                         elif sid in ["chronos_delay", "freedom_flash"]:
                             dmg = int(base_atk * 3.0)
                             e_hp -= dmg
-                            p_action_log = f"⚡ {sinfo['name']} chớp nhoáng gây {dmg} sát thương!"
+                            p_action_log = f"⚡ Dùng **{sinfo['name']}** gây **{dmg}** sát thương!"
                         elif sid in ["slugger_power", "ippo_dempsey"]:
                             dmg = int(base_atk * 3.8)
                             e_hp -= dmg
-                            p_action_log = f"🔥 **{sinfo['name']}** bộc phát toàn lực gây {dmg} sát thương hủy diệt!"
+                            p_action_log = f"🔥 **{sinfo['name']}** bộc phát toàn lực gây **{dmg}** sát thương!"
 
                 if e_hp <= 0:
                     e_hp = 0
@@ -373,13 +471,14 @@ async def run_battle_engine(ctx, enemy_data, is_boss=False):
                 e_dmg = random.randint(e_atk - 2, e_atk + 6)
                 if is_defending: e_dmg = int(e_dmg * 0.5)
                 p_hp -= e_dmg
-                e_action_log = f"{e_name} đánh gây {e_dmg} sát thương!"
+                e_action_log = f"{e_name} đánh trả gây **{e_dmg}** sát thương!"
 
                 if p_hp <= 0:
+                    p_hp = 0
                     await status_msg.edit(embed=battle_status(f"💀 THẤT BẠI trước {e_name}..."))
                     break
 
-                await status_msg.edit(embed=battle_status(f"{p_action_log} | {e_action_log}"))
+                await status_msg.edit(embed=battle_status(f"{p_action_log}\n{e_action_log}"))
 
             except asyncio.TimeoutError:
                 await ctx.send("Quá thời gian lựa chọn!")
@@ -395,22 +494,7 @@ async def style_command(ctx, action: str = None, style_id: str = None):
     p = get_player(ctx.author.id)
 
     if not action:
-        embed = discord.Embed(title="🥊 UNTITLED BOXING GAME STYLES", description="Trang bị Style để nhận bộ skill cố định và hệ số chỉ số tương ứng!", color=discord.Color.gold())
-        owned = p.get("owned_styles", [])
-        curr = p.get("equipped_style")
-
-        for sid, sinfo in STYLES.items():
-            status = "⭐ Đang trang bị" if curr == sid else ("✅ Đã sở hữu" if sid in owned else f"❌ Chưa sở hữu (Giá: ¥{sinfo['price']:,})")
-            atk_p = f"+{int((sinfo['atk_mod']-1)*100)}%" if sinfo['atk_mod'] >= 1 else f"{int((sinfo['atk_mod']-1)*100)}%"
-            hp_p = f"+{int((sinfo['hp_mod']-1)*100)}%" if sinfo['hp_mod'] >= 1 else f"{int((sinfo['hp_mod']-1)*100)}%"
-            
-            embed.add_field(
-                name=f"[{RARITY_COLORS[sinfo['rarity']]}] {sinfo['name']} (`{sid}`)",
-                value=f"Trạng thái: **{status}**\nChỉ số: ATK ({atk_p}) | HP ({hp_p})\n*{sinfo['desc']}*",
-                inline=False
-            )
-        embed.set_footer(text="Dùng lệnh: !Tstyle equip <mã_style> | !Tstyle unequip")
-        return await ctx.send(embed=embed)
+        return await ctx.send("Vui lòng dùng `!Thelps style` để xem danh sách Style, hoặc `!Tstyle equip <mã>` để trang bị!")
 
     act = action.lower()
     if act == "equip":
@@ -444,14 +528,9 @@ async def boss_command(ctx):
 @bot.command(name="Tshop")
 async def shop_command(ctx, action: str = None, item_code: str = None):
     p = get_player(ctx.author.id)
-    
+
     if not action:
-        embed = discord.Embed(title="🛒 CỬA HÀNG STYLES & VẬT PHẨM", color=discord.Color.green())
-        style_list = "\n".join([f"`{sid}` - {s['name']} ({RARITY_COLORS[s['rarity']]}) : **¥{s['price']:,}**" for sid, s in STYLES.items()])
-        embed.add_field(name="🥊 UBG STYLES", value=style_list, inline=False)
-        embed.add_field(name="🥤 VẬT PHẨM", value="`stamina` (¥300) | `bento` (¥800)", inline=False)
-        embed.set_footer(text="Dùng: !Tshop buy_style <mã> hoặc !Tshop buy <mã>")
-        return await ctx.send(embed=embed)
+        return await ctx.send("Vui lòng dùng `!Thelps shop` để xem mặt hàng, hoặc `!Tshop buy_style <mã>` để mua!")
 
     if action.lower() == "buy_style":
         if not item_code: return await ctx.send("Vui lòng nhập mã style muốn mua!")
@@ -482,11 +561,9 @@ async def use_item(ctx, item_code: str = None):
     inv[code] -= 1
 
     if code == "lucky_spin":
-        # Tỉ lệ Gacha phân chia theo độ hiếm Style
         reward_type = random.choices(["yen", "qp", "exp", "style"], weights=[35, 25, 20, 20])[0]
         
         if reward_type == "style":
-            # Phân bổ tỉ lệ xuất hiện style theo cấp bậc
             rarity_weights = {"common": 50, "rare": 30, "epic": 15, "legend": 4, "myth": 1}
             pool = []
             for sid, s in STYLES.items():
@@ -517,20 +594,53 @@ async def use_item(ctx, item_code: str = None):
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎰 **VÒNG QUAY NGẪU NHIÊN...**\n🎉 Bạn nhận được: {res_str}!")
 
+# -------------------- COMMAND: PROFILE --------------------
 @bot.command(name="profile")
 async def profile(ctx):
     p = get_player(ctx.author.id)
     c_name, _ = get_player_clan(ctx.author.id)
-    clan_str = f"🏰 **{c_name}** (+15% ATK)" if c_name else "Chưa có"
-
+    
     st_id = p.get("equipped_style")
-    style_str = f"[{RARITY_COLORS[STYLES[st_id]['rarity']]}] **{STYLES[st_id]['name']}**" if st_id else "Chưa trang bị"
+    if st_id and st_id in STYLES:
+        st = STYLES[st_id]
+        style_str = f"[{RARITY_COLORS[st['rarity']]}] **{st['name']}**"
+        atk_bonus = f" (ATK x{st['atk_mod']})"
+        hp_bonus = f" (HP x{st['hp_mod']})"
+    else:
+        style_str = "❌ Chưa trang bị"
+        atk_bonus = ""
+        hp_bonus = ""
 
-    embed = discord.Embed(title=f"📜 Bảng Chỉ Số: {ctx.author.display_name}", color=discord.Color.gold())
-    embed.add_field(name="Level", value=f"Lv.{p['level']} (SP: {p['sp']})", inline=True)
-    embed.add_field(name="Yên", value=f"¥{p['yen']:,}", inline=True)
-    embed.add_field(name="UBG Style", value=style_str, inline=False)
-    embed.add_field(name="Clan", value=clan_str, inline=False)
+    clan_str = f"🏰 **{c_name}** (+15% ATK)" if c_name else "❌ Chưa tham gia Clan"
+    
+    owned_count = len(p.get("owned_styles", []))
+    total_styles = len(STYLES)
+
+    embed = discord.Embed(
+        title=f"💳 THẺ VÕ SĨ: {ctx.author.display_name.upper()}",
+        color=discord.Color.gold()
+    )
+    embed.set_thumbnail(url=ctx.author.display_avatar.url)
+
+    embed.add_field(
+        name="📊 **THÔNG TIN CƠ BẢN**",
+        value=f"⭐ **Cấp độ**: Level `{p['level']}`\n⚡ **Kinh nghiệm**: `{p['exp']}` EXP\n💰 **Tài sản**: `¥{p['yen']:,}` Yên\n🎟️ **Vé Spin**: `{p.get('inventory', {}).get('lucky_spin', 0)}` vé",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🥊 **THÔNG SỐ CHIẾN ĐẤU**",
+        value=f"❤️ **HP Gốc**: `{p['hp_max']}`{hp_bonus}\n🧪 **MP Gốc**: `{p['mp_max']}`\n⚔️ **ATK Gốc**: `{p['atk']}`{atk_bonus}",
+        inline=True
+    )
+
+    embed.add_field(
+        name="🛡️ **TRANG BỊ & TỔ CHỨC**",
+        value=f"🥊 **UBG Style**: {style_str}\n📚 **Sưu tầm Style**: `{owned_count}/{total_styles}`\n{clan_str}",
+        inline=True
+    )
+
+    embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh đầy đủ!")
     await ctx.send(embed=embed)
 
 # -------------------- KHỞI ĐỘNG --------------------
