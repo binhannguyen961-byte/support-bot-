@@ -4,6 +4,7 @@ import logging
 import asyncio
 import threading
 import json
+import random
 from datetime import timedelta
 import discord
 from discord.ext import commands
@@ -15,6 +16,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("true-architect")
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+OWNER_IDS = set()
+if os.getenv("OWNER_IDS"):
+    try:
+        OWNER_IDS = set(int(x.strip()) for x in os.getenv("OWNER_IDS").split(",") if x.strip())
+    except Exception:
+        OWNER_IDS = set()
 
 API_KEYS = []
 for i in range(1, 6):
@@ -107,6 +114,35 @@ def save_moderation_data(data):
 
 moderation_data = load_moderation_data()
 
+# -------------------- TIỆN ÍCH QUYỀN & XÁC NHẬN --------------------
+async def is_authorized(ctx):
+    # Chủ server hoặc admin, hoặc nằm trong OWNER_IDS env mới được thao tác nhạy cảm
+    try:
+        if ctx.author.id in OWNER_IDS:
+            return True
+    except Exception:
+        pass
+    perms = ctx.author.guild_permissions
+    return perms.administrator
+
+async def confirm_action(ctx, action_desc: str, timeout: int = 20):
+    """Yêu cầu xác nhận từ người gọi lệnh bằng reaction ✅."""
+    confirm_msg = await ctx.send(f"Xác nhận: {action_desc}\nVui lòng phản hồi bằng ✅ trong vòng {timeout} giây để tiếp tục.")
+    await confirm_msg.add_reaction("✅")
+
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) == "✅" and reaction.message.id == confirm_msg.id
+
+    try:
+        reaction, user = await bot.wait_for('reaction_add', timeout=timeout, check=check)
+        return True
+    except asyncio.TimeoutError:
+        try:
+            await confirm_msg.edit(content=f"Hủy: không nhận được xác nhận cho '{action_desc}'.")
+        except Exception:
+            pass
+        return False
+
 # -------------------- CÁC LỆNH HỆ THỐNG --------------------
 @bot.command(name="Thelps")
 async def custom_help(ctx):
@@ -118,21 +154,22 @@ async def custom_help(ctx):
     embed.add_field(
         name="📌 Các lệnh hệ thống",
         value=(
-            "`!chat [nội dung/gửi kèm ảnh]` - Trò chuy���n hoặc phân tích hình ảnh.\n"
+            "`!rps [rock/paper/scissors]` - Chơi kéo-búa-bao với bot.\n"
+            "`!guess start` - Bắt đầu trò đoán số (1-100). Dùng `!guess <số>` để đoán.\n"
+            "`!trivia` - Trả lời câu hỏi ngắn.\n"
             "`!code [yêu cầu]` - Kiến tạo và viết mã nguồn Python.\n"
             "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
-            "`!mute @user [phút]` - Lặng câm thực thể bằng Timeout.\n"
-            "`!unmute @user` - Bỏ lặng câm thực thể.\n"
-            "`!ban @user [lý do]` - Cấm thành viên.\n"
-            "`!kick @user [lý do]` - Đuổi thành viên.\n"
-            "`!purge [số lượng]` - Xoá nhiều tin nhắn.\n"
+            "`!mute @user [phút]` - Tạm khóa thành viên (timeout).\n"
+            "`!unmute @user` - Bỏ timeout.\n"
+            "`!ban @user [lý do]` - Cấm thành viên (cần xác nhận).\n"
+            "`!kick @user [lý do]` - Đuổi thành viên (cần xác nhận).\n"
+            "`!purge [số lượng]` - Xoá nhiều tin nhắn (cần xác nhận).\n"
             "`!create_channel [tên]` - Tạo kênh text mới.\n"
             "`!give_role @user [tên role]` - Gán role cho thành viên.\n"
             "`!remove_role @user [tên role]` - Gỡ role khỏi thành viên.\n"
+            "`!set_builder @user` - Gán role Builder.\n"
+            "`!remove_builder @user` - G��� role Builder.\n"
             "`!mod_addword [từ]` - Thêm từ vào blacklist auto-moderation.\n"
-            "`!mod_removeword [từ]` - Loại từ khỏi blacklist.\n"
-            "`!mod_listwords` - Liệt kê từ trong blacklist.\n"
-            "`!mod_toggle [on/off]` - Bật/tắt auto-moderation.\n"
         ),
         inline=False
     )
@@ -146,6 +183,8 @@ async def warn_member(ctx, member: discord.Member, *, reason: str = "Không rõ 
 @bot.command(name="mute")
 @commands.has_permissions(moderate_members=True)
 async def mute_member(ctx, member: discord.Member, minutes: int = 5):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     try:
         duration = timedelta(minutes=minutes)
         await member.timeout(duration, reason="Bị tạm khóa bởi True Architect")
@@ -156,6 +195,8 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
 @bot.command(name="unmute")
 @commands.has_permissions(moderate_members=True)
 async def unmute_member(ctx, member: discord.Member):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     try:
         await member.timeout(None, reason="Bỏ khóa bởi True Architect")
         await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, sự tĩnh lặng đã kết thúc.")
@@ -171,10 +212,15 @@ async def code_architect(ctx, *, prompt: str):
             clean_code = result.replace("```python", "").replace("```py", "").replace("```", "").strip()
             await ctx.send(f"```py\n{clean_code}\n```")
 
-# -------------------- LỆNH THAY THẾ MODERATORS & BUILDERS --------------------
+# -------------------- LỆNH THAY THẾ MODERATORS & BUILDERS (CÓ XÁC NHẬN) --------------------
 @bot.command(name="ban")
 @commands.has_permissions(ban_members=True)
 async def ban_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
+    ok = await confirm_action(ctx, f"Cấm {member.mention} vì: {reason}")
+    if not ok:
+        return
     try:
         await member.ban(reason=reason)
         await ctx.send(f"{member.mention} đã bị cấm. Lý do: {reason}")
@@ -185,6 +231,11 @@ async def ban_member(ctx, member: discord.Member, *, reason: str = "Không rõ l
 @bot.command(name="kick")
 @commands.has_permissions(kick_members=True)
 async def kick_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
+    ok = await confirm_action(ctx, f"Đuổi {member.mention} vì: {reason}")
+    if not ok:
+        return
     try:
         await member.kick(reason=reason)
         await ctx.send(f"{member.mention} đã bị đuổi. Lý do: {reason}")
@@ -195,6 +246,11 @@ async def kick_member(ctx, member: discord.Member, *, reason: str = "Không rõ 
 @bot.command(name="purge")
 @commands.has_permissions(manage_messages=True)
 async def purge_messages(ctx, amount: int = 10):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
+    ok = await confirm_action(ctx, f"Xóa {amount} tin nhắn trong kênh {ctx.channel.mention}")
+    if not ok:
+        return
     try:
         deleted = await ctx.channel.purge(limit=amount)
         await ctx.send(f"Đã xóa {len(deleted)} tin nhắn.", delete_after=5)
@@ -205,6 +261,8 @@ async def purge_messages(ctx, amount: int = 10):
 @bot.command(name="create_channel")
 @commands.has_permissions(manage_channels=True)
 async def create_channel(ctx, *, name: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     guild = ctx.guild
     try:
         channel = await guild.create_text_channel(name)
@@ -216,6 +274,8 @@ async def create_channel(ctx, *, name: str):
 @bot.command(name="give_role")
 @commands.has_permissions(manage_roles=True)
 async def give_role(ctx, member: discord.Member, *, role_name: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     guild = ctx.guild
     role = discord.utils.get(guild.roles, name=role_name)
     if not role:
@@ -234,6 +294,8 @@ async def give_role(ctx, member: discord.Member, *, role_name: str):
 @bot.command(name="remove_role")
 @commands.has_permissions(manage_roles=True)
 async def remove_role(ctx, member: discord.Member, *, role_name: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     guild = ctx.guild
     role = discord.utils.get(guild.roles, name=role_name)
     if not role:
@@ -248,6 +310,8 @@ async def remove_role(ctx, member: discord.Member, *, role_name: str):
 @bot.command(name="set_builder")
 @commands.has_permissions(manage_roles=True)
 async def set_builder(ctx, member: discord.Member):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     guild = ctx.guild
     role_name = "Builder"
     role = discord.utils.get(guild.roles, name=role_name)
@@ -267,6 +331,8 @@ async def set_builder(ctx, member: discord.Member):
 @bot.command(name="remove_builder")
 @commands.has_permissions(manage_roles=True)
 async def remove_builder(ctx, member: discord.Member):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     guild = ctx.guild
     role_name = "Builder"
     role = discord.utils.get(guild.roles, name=role_name)
@@ -283,6 +349,8 @@ async def remove_builder(ctx, member: discord.Member):
 @bot.command(name="mod_addword")
 @commands.has_permissions(manage_messages=True)
 async def mod_addword(ctx, *, word: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     w = word.strip().lower()
     if w in moderation_data.get("blacklist", []):
         return await ctx.send("Từ đã có trong blacklist.")
@@ -293,6 +361,8 @@ async def mod_addword(ctx, *, word: str):
 @bot.command(name="mod_removeword")
 @commands.has_permissions(manage_messages=True)
 async def mod_removeword(ctx, *, word: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     w = word.strip().lower()
     if w not in moderation_data.get("blacklist", []):
         return await ctx.send("Từ không có trong blacklist.")
@@ -303,6 +373,8 @@ async def mod_removeword(ctx, *, word: str):
 @bot.command(name="mod_listwords")
 @commands.has_permissions(manage_messages=True)
 async def mod_listwords(ctx):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     words = moderation_data.get("blacklist", [])
     if not words:
         return await ctx.send("Blacklist đang trống.")
@@ -311,6 +383,8 @@ async def mod_listwords(ctx):
 @bot.command(name="mod_toggle")
 @commands.has_permissions(manage_messages=True)
 async def mod_toggle(ctx, mode: str):
+    if not await is_authorized(ctx):
+        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
     m = mode.strip().lower()
     if m not in ("on", "off"):
         return await ctx.send("Sử dụng: `!mod_toggle on` hoặc `!mod_toggle off`")
@@ -318,33 +392,76 @@ async def mod_toggle(ctx, mode: str):
     save_moderation_data(moderation_data)
     await ctx.send(f"Auto-moderation đã được đặt: {m.upper()}")
 
-# -------------------- CHAT COMMAND (GIỮ NGUYÊN) --------------------
-@bot.command(name="chat")
-async def chat_architect(ctx, *, prompt: str = ""):
-    async with ctx.typing():
-        contents = []
-        if ctx.message.attachments:
-            att = ctx.message.attachments[0]
-            if att.content_type and att.content_type.startswith("image/"):
-                try:
-                    image_bytes = await att.read()
-                    contents.append(types.Part.from_bytes(data=image_bytes, mime_type=att.content_type))
-                except Exception as e:
-                    logger.error(f"Lỗi đọc ảnh: {e}")
+# -------------------- MINIGAMES --------------------
+guess_games = {}  # channel_id -> target_number
 
-        if not prompt and contents:
-            prompt = "Quan sát bức ảnh này dưới góc nhìn điềm tĩnh và thấu đáo."
-        if prompt:
-            contents.append(prompt)
+@bot.command(name="rps")
+async def rps(ctx, choice: str):
+    choice = (choice or "").lower()
+    options = ["rock", "paper", "scissors"]
+    if choice not in options:
+        return await ctx.send("Sử dụng: `!rps rock|paper|scissors`")
+    bot_choice = random.choice(options)
+    outcome = "hòa"
+    if choice == bot_choice:
+        outcome = "hòa"
+    elif (choice == "rock" and bot_choice == "scissors") or (choice == "paper" and bot_choice == "rock") or (choice == "scissors" and bot_choice == "paper"):
+        outcome = "bạn thắng"
+    else:
+        outcome = "bot thắng"
+    await ctx.send(f"Bạn: {choice} — Bot: {bot_choice} → Kết quả: {outcome}.")
 
-        if not contents:
-            return await ctx.send("Thực tại trống rỗng, hãy cung cấp cho tôi một hình hài cụ thể.")
+@bot.command(name="guess")
+async def guess(ctx, arg: str):
+    # start or number
+    ch = ctx.channel.id
+    if arg.lower() == "start":
+        if ch in guess_games:
+            return await ctx.send("Trò chơi đoán số đã diễn ra trong kênh này. Hãy dùng `!guess <số>` để đoán.")
+        target = random.randint(1, 100)
+        guess_games[ch] = target
+        await ctx.send("Bắt đầu trò đoán số! Mình đã nghĩ một số từ 1 đến 100. Hãy dùng `!guess <số>` để đoán.")
+        return
+    # try parse number
+    try:
+        num = int(arg)
+    except ValueError:
+        return await ctx.send("Sử dụng: `!guess start` để bắt đầu hoặc `!guess <số>` để đoán.")
+    if ch not in guess_games:
+        return await ctx.send("Chưa có trò chơi nào đang diễn ra, dùng `!guess start` để bắt đầu.")
+    target = guess_games[ch]
+    if num == target:
+        await ctx.send(f"Chính xác! {ctx.author.mention} đã đoán đúng: {target}.")
+        del guess_games[ch]
+    elif num < target:
+        await ctx.send("Cao hơn một chút.")
+    else:
+        await ctx.send("Thấp hơn một chút.")
 
-        result = await call_gemini(contents)
-        if result:
-            await ctx.send(result)
+trivia_questions = [
+    ("Thủ đô của Pháp là g��?", "paris"),
+    ("Trong lập trình, HTTP viết tắt của gì?", "hypertext transfer protocol"),
+    ("Số nguyên tố nhỏ nhất là bao nhiêu?", "2"),
+]
 
-# -------------------- LẮNG NGHE TIN NHẮN (MENTION/DM) + AUTO-MODERATION --------------------
+@bot.command(name="trivia")
+async def trivia(ctx):
+    q, a = random.choice(trivia_questions)
+    await ctx.send(f"Câu hỏi: {q} (Trả lời trong 20s bằng tin nhắn) ")
+
+    def check(m):
+        return m.channel == ctx.channel and m.author == ctx.author
+
+    try:
+        msg = await bot.wait_for('message', timeout=20.0, check=check)
+        if msg.content.strip().lower() == a:
+            await ctx.send("Chính xác! Bạn thật tuyệt.")
+        else:
+            await ctx.send(f"Sai rồi — đáp án đúng là: {a}")
+    except asyncio.TimeoutError:
+        await ctx.send(f"Hết giờ — đáp án là: {a}")
+
+# -------------------- LẮNG NGHE TIN NHẮN (MENTION/DM) + AUTO-MODERATION (AI CHAT REMOVED) --------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -370,14 +487,13 @@ async def on_message(message):
                     await mod_log.send(f"Đã xóa tin của {message.author.mention} vì chứa `{w}`: {message.content}")
                 return
 
+    # Nếu bot bị mention hoặc DM, không gọi AI nữa — hướng dẫn dùng lệnh
     if bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
         if not message.content.startswith("!"):
-            clean_content = message.content.replace(f"<@{bot.user.id}>", "").strip()
-            async with message.channel.typing():
-                prompt = clean_content if clean_content else "Chào bạn."
-                result = await call_gemini([prompt])
-                if result:
-                    await message.channel.send(result)
+            try:
+                await message.channel.send("Tính năng chat AI đã bị tắt. Vui lòng dùng các lệnh: !Thelps để xem lệnh, hoặc thử minigames như !rps, !guess, !trivia.")
+            except Exception:
+                pass
             return
 
     await bot.process_commands(message)
