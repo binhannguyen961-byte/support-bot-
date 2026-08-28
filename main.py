@@ -5,7 +5,7 @@ import asyncio
 import threading
 import json
 import random
-from datetime import timedelta
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from flask import Flask
@@ -35,9 +35,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# -------------------- LƯU TRỮ DỮ LIỆU MODERATION & RPG --------------------
+# -------------------- LƯU TRỮ DỮ LIỆU MODERATION, RPG & CLAN --------------------
 DATA_PATH = "moderation_data.json"
 RPG_DATA_PATH = "rpg_data.json"
+CLAN_DATA_PATH = "clan_data.json"
+
 DEFAULT_DATA = {"auto_mod": True, "blacklist": []}
 
 def load_json(path, default):
@@ -59,6 +61,7 @@ def save_json(path, data):
 
 moderation_data = load_json(DATA_PATH, DEFAULT_DATA)
 rpg_data = load_json(RPG_DATA_PATH, {})
+clan_data = load_json(CLAN_DATA_PATH, {})
 
 def get_player(user_id):
     uid = str(user_id)
@@ -70,18 +73,46 @@ def get_player(user_id):
             "mp_max": 50,
             "atk": 15,
             "yen": 1000,
-            "inventory": {}
+            "inventory": {},
+            "last_daily": None,
+            "trait": None
         }
         save_json(RPG_DATA_PATH, rpg_data)
     
-    # Đảm bảo có inventory
     if "inventory" not in rpg_data[uid]:
         rpg_data[uid]["inventory"] = {}
-        save_json(RPG_DATA_PATH, rpg_data)
+    if "last_daily" not in rpg_data[uid]:
+        rpg_data[uid]["last_daily"] = None
+    if "trait" not in rpg_data[uid]:
+        rpg_data[uid]["trait"] = None
+    save_json(RPG_DATA_PATH, rpg_data)
         
     return rpg_data[uid]
 
-# -------------------- DANH SÁCH VẬT PHẨM VÀ CỬA HÀNG --------------------
+def get_player_clan(user_id):
+    uid = str(user_id)
+    for clan_name, info in clan_data.items():
+        if uid in info["members"]:
+            return clan_name, info
+    return None, None
+
+def get_shop_price(base_price, level):
+    scale = 1 + (level - 1) * 0.05
+    return int(base_price * scale)
+
+# -------------------- DANH SÁCH TRAITS --------------------
+BUFF_TRAITS = [
+    {"id": "godlike", "name": "神 - Sức Mạnh Thần Thoại", "desc": "+50% ATK và +30% HP Max trong mọi trận đấu."},
+    {"id": "speedster", "name": "⚡ Siêu Tốc Độ", "desc": "Có 20% tỷ lệ né hoàn toàn đòn đánh của kẻ thù."},
+    {"id": "vampiric", "name": "🦇 Huyết Tộc", "desc": "Hồi lại 20% sát thương gây ra thành HP."}
+]
+
+CURSE_TRAITS = [
+    {"id": "fragile", "name": "☠️ Tẩy Não / Cơ Thể Yếu Ớt", "desc": "Giảm 25% HP Max khi bước vào trận đấu."},
+    {"id": "sluggish", "name": "🐢 Chậm Chạp", "desc": "Bị mất 10% ATK trong mọi trận chiến."}
+]
+
+# -------------------- DANH SÁCH VẬT PHẨM --------------------
 ITEMS = {
     "stamina": {
         "name": "Hộp sữa Stamina",
@@ -104,35 +135,41 @@ ITEMS = {
         "type": "heal_mp",
         "value": 35
     },
-    "spidey_mask": {
-        "name": "Mặt nạ Nhện Tự chế",
-        "price": 2500,
-        "desc": "Sản phẩm độ lại từ Spider-Man. Tăng vĩnh viễn +8 ATK.",
-        "type": "buff_atk",
-        "value": 8
-    },
-    "ddlc_poem": {
-        "name": "Tập thơ bị chỉnh sửa",
-        "price": 2000,
-        "desc": "Những dòng thơ bí ẩn từ CLB Văn Học. Tăng vĩnh viễn +20 MP Max.",
-        "type": "buff_mp_max",
-        "value": 20
-    },
-    "stand_arrow": {
-        "name": "Mũi tên Stand Kỳ lạ",
-        "price": 8000,
-        "desc": "Tàn tích thức tỉnh sức mạnh từ JoJo. Tăng +30 HP Max và +12 ATK vĩnh viễn.",
-        "type": "buff_stand",
+    "rokaka": {
+        "name": "Trái Rokaka",
+        "price": 5000,
+        "desc": "Trái cây kỳ lạ giúp tẩy sạch hoàn toàn Trait (Đặc tính) hiện tại của bạn.",
+        "type": "reset_trait",
         "value": 0
     },
-    "pan": {
-        "name": "Chảo chống dính cũ",
-        "price": 200,
-        "desc": "Đồ phế liệu thu gom từ gã bán hàng rong. Bán lại lấy chút tiền Yên.",
-        "type": "junk",
+    "mystery_box": {
+        "name": "Hộp bí ẩn",
+        "price": 1250,
+        "desc": "Mở ra ngẫu nhiên từ 1 đến 15,000 Yên (Cấp càng cao tỉ lệ trúng thưởng lớn càng giảm).",
+        "type": "mystery_box",
         "value": 0
     }
 }
+
+# -------------------- DANH SÁCH QUÁI VÀ BOSS --------------------
+REGULAR_ENEMIES = [
+    {"name": "Quickbullet", "hp": 110, "atk": 15, "exp": 55, "yen": 1100, "desc": "Kẻ sở hữu tốc độ chớp nhoáng (25% cơ hội cướp lượt đánh trước)!", "special": "quickbullet"},
+    {"name": "Demonking", "hp": 220, "atk": 20, "exp": 100, "yen": 2200, "desc": "Quỷ Vương hùng mạnh (Tự động hồi 90% HP khi xuống dưới 15% máu)!", "special": "demonking"},
+    {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 70, "atk": 8, "exp": 25, "yen": 400, "desc": "Một gã móc túi lề đường bình thường."},
+    {"name": "Sát Thủ Passione (JoJo Part 5)", "hp": 130, "atk": 16, "exp": 60, "yen": 1200, "desc": "Sử dụng Stand dạng cận chiến tấn công chớp nhoáng."},
+    {"name": "Tên Lính Thuê Chitauri (MCU)", "hp": 140, "atk": 18, "exp": 70, "yen": 1600, "desc": "Mang vũ khí năng lượng vũ trụ từ binh đoàn Thanos."}
+]
+
+BOSSES = [
+    {"name": "Superman (DC Comics)", "hp": 950, "atk": 75, "exp": 1200, "yen": 35000, "desc": "Người Đàn Ông Thép với sức mạnh thể chất áp đảo!"},
+    {"name": "Sentry (Marvel)", "hp": 1050, "atk": 85, "exp": 1500, "yen": 42000, "desc": "Anh hùng sở hữu sức mạnh của một triệu mặt trời phát nổ!"},
+    {"name": "Void (Marvel)", "hp": 1200, "atk": 95, "exp": 1800, "yen": 50000, "desc": "Thực thể bóng tối hủy diệt mang sức mạnh vô hạn!"},
+    {"name": "Doomsday (DC Comics)", "hp": 1100, "atk": 80, "exp": 1600, "yen": 45000, "desc": "Quái vật tiến hóa không thể bị tiêu diệt theo cách thông thường!"},
+    {"name": "Loki (MCU)", "hp": 800, "atk": 65, "exp": 1000, "yen": 30000, "desc": "Vị Thần Lừa Lọc với những ảo thuật thao túng tâm trí!"},
+    {"name": "Ultron (MCU)", "hp": 900, "atk": 70, "exp": 1100, "yen": 32000, "desc": "Trí tuệ nhân tạo bá chủ cùng binh đoàn Vibranium!"},
+    {"name": "Diavolo (King Crimson - JoJo Part 5)", "hp": 750, "atk": 60, "exp": 900, "yen": 25000, "desc": "Trùm Passione với khả năng xóa bỏ thời gian!"},
+    {"name": "Thanos (MCU)", "hp": 1000, "atk": 80, "exp": 1400, "yen": 40000, "desc": "Gã Titan Điên mang găng tay vô cực!"}
+]
 
 # -------------------- TIỆN ÍCH QUYỀN & XÁC NHẬN --------------------
 async def is_authorized(ctx):
@@ -143,24 +180,24 @@ async def is_authorized(ctx):
         pass
     return ctx.author.guild_permissions.administrator
 
-async def confirm_action(ctx, action_desc: str, timeout: int = 20):
-    confirm_msg = await ctx.send(f"Xác nhận: {action_desc}\nVui lòng phản hồi bằng ✅ trong vòng {timeout} giây để tiếp tục.")
+async def confirm_action(ctx, target_user, action_desc: str, timeout: int = 30):
+    confirm_msg = await ctx.send(f"{target_user.mention}, xác nhận: **{action_desc}**\nVui lòng thả emoji ✅ trong vòng {timeout} giây để đồng ý.")
     await confirm_msg.add_reaction("✅")
 
     def check(reaction, user):
-        return user == ctx.author and str(reaction.emoji) == "✅" and reaction.message.id == confirm_msg.id
+        return user == target_user and str(reaction.emoji) == "✅" and reaction.message.id == confirm_msg.id
 
     try:
         await bot.wait_for('reaction_add', timeout=timeout, check=check)
         return True
     except asyncio.TimeoutError:
         try:
-            await confirm_msg.edit(content=f"Hủy: không nhận được xác nhận cho '{action_desc}'.")
+            await confirm_msg.edit(content=f"❌ Đã hủy: Không nhận được xác nhận từ {target_user.mention}.")
         except Exception:
             pass
         return False
 
-# -------------------- HỆ THỐNG LỆNH HƯỚNG DẪN --------------------
+# -------------------- LỆNH HƯỚNG DẪN --------------------
 @bot.command(name="Thelps")
 async def custom_help(ctx):
     embed = discord.Embed(
@@ -169,63 +206,134 @@ async def custom_help(ctx):
         color=discord.Color.from_rgb(30, 30, 30)
     )
     embed.add_field(
-        name="🎮 Turn-Based RPG (Multiverse Street)",
+        name="🎮 Turn-Based RPG & Boss",
         value=(
-            "`!battle` - Đụng độ các đối thủ từ JoJo, Yakuza, DDLC, Spider-Verse & Quần chúng.\n"
-            "`!profile` - Xem chỉ số cá nhân, cấp độ và tiền Yên."
+            "`!battle` - Đụng độ quái thường (Quickbullet, Demonking, Passione...).\n"
+            "`!Tboss` - Khiêu chiến Boss Cực Siêu Cấp (Superman, Sentry, Void, Doomsday... Req: Lv.5+).\n"
+            "`!profile` - Xem chỉ số, Trait vĩnh viễn, Clan và Yên.\n"
+            "`!Tdaily` - Nhận phần thưởng hàng ngày (Reset mỗi 12 giờ)."
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="🏰 Hệ Thống Clan (Tộc)",
+        value=(
+            "`!Tclan create <tên_clan>` - Tạo Clan mới.\n"
+            "`!Tclan invite @user` - Mời thành viên vào Clan (Cần đồng ý).\n"
+            "`!Tclan info` - Xem thông tin Clan hiện tại."
         ),
         inline=False
     )
     embed.add_field(
         name="🏪 Cửa Hàng & Túi Đồ",
         value=(
-            "`!Tshop` / `!Tstore` - Xem danh sách vật phẩm trong cửa hàng.\n"
-            "`!Tshop buy <mã_món> [số_lượng]` - Mua vật phẩm từ cửa hàng.\n"
-            "`!Tshop sell <mã_món> [số_lượng]` - Bán lại vật phẩm thu về 60% tiền Yên.\n"
-            "`!Tinventory` - Xem các vật phẩm đang sở hữu trong túi đồ.\n"
-            "`!Tuse <mã_món>` - Sử dụng vật phẩm từ túi đồ."
-        ),
-        inline=False
-    )
-    embed.add_field(
-        name="📌 Các lệnh quản trị & Hệ thống",
-        value=(
-            "`!warn @user [lý do]` - Cảnh cáo thành viên.\n"
-            "`!mute @user [phút]` - Tạm khóa thành viên.\n"
-            "`!unmute @user` - Bỏ khóa thành viên.\n"
-            "`!ban @user [lý do]` - Cấm thành viên (cần xác nhận).\n"
-            "`!kick @user [lý do]` - Đuổi thành viên (cần xác nhận).\n"
-            "`!purge [số lượng]` - Xoá tin nhắn (cần xác nhận).\n"
-            "`!create_channel [tên]` - Tạo kênh text mới.\n"
-            "`!give_role @user [role]` - Gán role.\n"
-            "`!remove_role @user [role]` - Gỡ role.\n"
-            "`!set_builder @user` - Gán Builder.\n"
-            "`!remove_builder @user` - Gỡ Builder.\n"
-            "`!mod_addword [từ]` - Thêm từ vào blacklist.\n"
-            "`!mod_removeword [từ]` - Xóa từ khỏi blacklist.\n"
-            "`!mod_listwords` - Xem blacklist.\n"
-            "`!mod_toggle [on/off]` - Bật/tắt auto-moderation."
+            "`!Tshop` / `!Tstore` - Xem danh sách vật phẩm (Có trái Rokaka giá 5000 Yên).\n"
+            "`!Tshop buy <mã_món> [số_lượng]` - Mua vật phẩm.\n"
+            "`!Tinventory` - Xem túi đồ cá nhân.\n"
+            "`!Tuse <mã_món>` - Sử dụng vật phẩm (Bao gồm Rokaka xóa Trait)."
         ),
         inline=False
     )
     await ctx.send(embed=embed)
 
-# -------------------- TÍNH NĂNG SHOP, INVENTORY & USE --------------------
+# -------------------- TÍNH NĂNG TDAILY --------------------
+@bot.command(name="Tdaily")
+async def daily_reward(ctx):
+    p = get_player(ctx.author.id)
+    now = datetime.utcnow()
+
+    if p["last_daily"]:
+        last_time = datetime.fromisoformat(p["last_daily"])
+        if now - last_time < timedelta(hours=12):
+            remaining = timedelta(hours=12) - (now - last_time)
+            hours, remainder = divmod(int(remaining.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            return await ctx.send(f"⏳ Bạn đã nhận quà rồi! Hãy quay lại sau **{hours}h {minutes}m {seconds}s**.")
+
+    reward_yen = 1000 + (p["level"] * 250)
+    reward_exp = 50 + (p["level"] * 15)
+
+    p["yen"] += reward_yen
+    p["exp"] += reward_exp
+    p["last_daily"] = now.isoformat()
+
+    save_json(RPG_DATA_PATH, rpg_data)
+    await ctx.send(f"🎁 **QUÀ HẰNG NGÀY!**\nBạn đã nhận được **¥{reward_yen:,}** và **{reward_exp} EXP**!")
+
+# -------------------- TÍNH NĂNG TCLAN --------------------
+@bot.command(name="Tclan")
+async def clan_command(ctx, sub_cmd: str = None, *, arg: str = None):
+    p = get_player(ctx.author.id)
+    c_name, c_info = get_player_clan(ctx.author.id)
+
+    if not sub_cmd or sub_cmd.lower() == "info":
+        if not c_name:
+            return await ctx.send("Bạn chưa tham gia Clan nào. Dùng `!Tclan create <tên_clan>` để tạo mới!")
+        
+        members_str = ", ".join([f"<@{m}>" for m in c_info["members"]])
+        embed = discord.Embed(title=f"🏰 Clan: {c_name}", color=discord.Color.gold())
+        embed.add_field(name="Chủ Clan", value=f"<@{c_info['owner']}>", inline=True)
+        embed.add_field(name="Số thành viên", value=f"{len(c_info['members'])}", inline=True)
+        embed.add_field(name="Nội quy / Tác dụng", value="Thành viên Clan được **+15% ATK** khi săn quái và Boss!", inline=False)
+        embed.add_field(name="Danh sách thành viên", value=members_str, inline=False)
+        return await ctx.send(embed=embed)
+
+    act = sub_cmd.lower()
+    if act == "create":
+        if not arg:
+            return await ctx.send("Vui lòng nhập tên Clan! Ví dụ: `!Tclan create Passione`")
+        if c_name:
+            return await ctx.send(f"Bạn đã thuộc Clan **{c_name}** rồi!")
+        
+        clan_title = arg.strip()
+        if clan_title in clan_data:
+            return await ctx.send("Tên Clan này đã tồn tại, hãy chọn tên khác.")
+
+        clan_data[clan_title] = {
+            "owner": str(ctx.author.id),
+            "members": [str(ctx.author.id)]
+        }
+        save_json(CLAN_DATA_PATH, clan_data)
+        await ctx.send(f"🎉 Đã thành lập Clan **{clan_title}** thành công!")
+
+    elif act == "invite":
+        if not ctx.message.mentions:
+            return await ctx.send("Vui lòng @người bạn muốn mời vào Clan!")
+        if not c_name:
+            return await ctx.send("Bạn phải có Clan mới có thể mời người khác!")
+        if c_info["owner"] != str(ctx.author.id):
+            return await ctx.send("Chỉ chủ Clan mới có quyền mời thành viên!")
+
+        target = ctx.message.mentions[0]
+        if target.id == ctx.author.id or target.bot:
+            return await ctx.send("Mục tiêu không hợp lệ.")
+
+        target_clan, _ = get_player_clan(target.id)
+        if target_clan:
+            return await ctx.send(f"{target.mention} đã ở trong Clan **{target_clan}** rồi!")
+
+        ok = await confirm_action(ctx, target, f"Bạn được {ctx.author.mention} mời tham gia Clan **{c_name}**!")
+        if ok:
+            clan_data[c_name]["members"].append(str(target.id))
+            save_json(CLAN_DATA_PATH, clan_data)
+            await ctx.send(f"🎊 {target.mention} đã chính thức gia nhập Clan **{c_name}**!")
+
+# -------------------- SHOP, INVENTORY & USE --------------------
 @bot.command(name="Tshop", aliases=["Tstore"])
 async def shop_command(ctx, action: str = None, item_id: str = None, amount: int = 1):
     p = get_player(ctx.author.id)
     
-    # Nếu không có tham số -> Hiển thị danh sách Cửa hàng
     if not action:
         embed = discord.Embed(
             title="🏪 Cửa Hàng Đa Vũ Trụ Kamurocho",
-            description=f"Số tiền hiện có: **¥{p['yen']:,}**\nDùng `!Tshop buy <mã_món> [số_lượng]` để mua.",
+            description=f"Số tiền hiện có: **¥{p['yen']:,}** (Giá vật phẩm có thể điều chỉnh nhẹ theo Level {p['level']})\nDùng `!Tshop buy <mã_món> [số_lượng]` để mua.",
             color=discord.Color.green()
         )
         for code, info in ITEMS.items():
+            curr_price = get_shop_price(info["price"], p["level"])
             embed.add_field(
                 name=f"📦 {info['name']} (`{code}`)",
-                value=f"Giá: **¥{info['price']:,}**\n*{info['desc']}*",
+                value=f"Giá: **¥{curr_price:,}**\n*{info['desc']}*",
                 inline=False
             )
         return await ctx.send(embed=embed)
@@ -238,7 +346,8 @@ async def shop_command(ctx, action: str = None, item_id: str = None, amount: int
         item_key = item_id.lower()
         item = ITEMS[item_key]
         amount = max(1, amount)
-        total_price = item["price"] * amount
+        unit_price = get_shop_price(item["price"], p["level"])
+        total_price = unit_price * amount
 
         if p["yen"] < total_price:
             return await ctx.send(f"Bạn không đủ tiền Yên! Cần **¥{total_price:,}** nhưng chỉ có **¥{p['yen']:,}**.")
@@ -249,30 +358,6 @@ async def shop_command(ctx, action: str = None, item_id: str = None, amount: int
         save_json(RPG_DATA_PATH, rpg_data)
 
         await ctx.send(f"🛍️ Đã mua thành công **{amount}x {item['name']}** với giá **¥{total_price:,}**!")
-
-    elif act == "sell":
-        if not item_id or item_id.lower() not in ITEMS:
-            return await ctx.send("Mã vật phẩm không hợp lệ! Dùng `!Tinventory` để xem các món bạn có.")
-        
-        item_key = item_id.lower()
-        item = ITEMS[item_key]
-        inv = p["inventory"]
-        amount = max(1, amount)
-
-        if inv.get(item_key, 0) < amount:
-            return await ctx.send(f"Bạn không có đủ **{amount}x {item['name']}** để bán!")
-
-        sell_price = int(item["price"] * 0.6) * amount
-        inv[item_key] -= amount
-        if inv[item_key] <= 0:
-            del inv[item_key]
-
-        p["yen"] += sell_price
-        save_json(RPG_DATA_PATH, rpg_data)
-
-        await ctx.send(f"💰 Đã bán **{amount}x {item['name']}** thu về **¥{sell_price:,}**!")
-    else:
-        await ctx.send("Cú pháp không hợp lệ. Sử dụng `!Tshop buy <mã_món>` hoặc `!Tshop sell <mã_món>`.")
 
 @bot.command(name="Tinventory")
 async def inventory_command(ctx):
@@ -302,7 +387,7 @@ async def inventory_command(ctx):
 @bot.command(name="Tuse")
 async def use_command(ctx, item_id: str = None):
     if not item_id:
-        return await ctx.send("Vui lòng nhập mã vật phẩm muốn dùng. VD: `!Tuse stamina`")
+        return await ctx.send("Vui lòng nhập mã vật phẩm muốn dùng. VD: `!Tuse rokaka`")
 
     item_key = item_id.lower()
     p = get_player(ctx.author.id)
@@ -318,26 +403,37 @@ async def use_command(ctx, item_id: str = None):
     itype = item["type"]
     val = item["value"]
 
-    # Áp dụng hiệu ứng
     msg = ""
     if itype == "heal_hp":
         msg = f"🥤 Bạn đã dùng **{item['name']}** và hồi phục **+{val} HP**!"
     elif itype == "heal_mp":
         msg = f"🧪 Bạn đã dùng **{item['name']}** và hồi phục **+{val} MP**!"
-    elif itype == "buff_atk":
-        p["atk"] += val
-        msg = f"⚔️ Sức mạnh bộc phát! **{item['name']}** đã tăng vĩnh viễn **+{val} ATK** cho bạn! (ATK hiện tại: {p['atk']})"
-    elif itype == "buff_mp_max":
-        p["mp_max"] += val
-        msg = f"📖 Tâm trí mở rộng! **{item['name']}** đã tăng vĩnh viễn **+{val} MP Max**! (MP Max hiện tại: {p['mp_max']})"
-    elif itype == "buff_stand":
-        p["hp_max"] += 30
-        p["atk"] += 12
-        msg = f"✨ Cảm giác kỳ lạ xuất hiện! **{item['name']}** giúp bạn tăng **+30 HP Max** và **+12 ATK**!"
-    elif itype == "junk":
-        return await ctx.send("Vật phẩm này là phế liệu, không thể dùng! Hãy dùng `!Tshop sell pan` để bán lấy tiền.")
+    elif itype == "reset_trait":
+        if not p.get("trait"):
+            return await ctx.send("Bạn hiện không có Trait nào để tẩy!")
+        
+        old_trait_name = p["trait"]["name"]
+        p["trait"] = None
+        msg = f"🍍 Bạn đã ăn **Trái Rokaka**! Trait **[{old_trait_name}]** đã bị tẩy sạch vĩnh viễn!"
+    elif itype == "mystery_box":
+        lvl = p["level"]
+        roll = random.random()
+        jackpot_chance = max(0.005, 0.05 - (lvl * 0.003))
+        big_chance = max(0.05, 0.20 - (lvl * 0.01))
 
-    # Trừ số lượng khỏi túi
+        if roll < jackpot_chance:
+            got_yen = 15000
+            box_note = "🎉 **ĐẠI CÁT! JACKPOT CỰC HIẾM!**"
+        elif roll < jackpot_chance + big_chance:
+            got_yen = random.randint(3000, 8000)
+            box_note = "✨ **MAY MẮN LỚN!**"
+        else:
+            got_yen = random.randint(1, 1500)
+            box_note = "📦 Phần thưởng nhận được:"
+
+        p["yen"] += got_yen
+        msg = f"🎁 Bạn vừa mở **Hộp Bí Ẩn**... {box_note} Bạn nhận được **¥{got_yen:,}**!"
+
     inv[item_key] -= 1
     if inv[item_key] <= 0:
         del inv[item_key]
@@ -345,67 +441,86 @@ async def use_command(ctx, item_id: str = None):
     save_json(RPG_DATA_PATH, rpg_data)
     await ctx.send(msg)
 
-# -------------------- DANH SÁCH NHÂN VẬT & BATTLE --------------------
-ENEMIES = [
-    {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 70, "atk": 8, "exp": 25, "yen": 400, "desc": "Một gã móc túi lề đường bình thường."},
-    {"name": "Lão Bán Mì Chợ Đêm (Side Story)", "hp": 110, "atk": 12, "exp": 45, "yen": 1500, "desc": "Tự dưng đòi quyết đấu bằng vá múc nước dùng!"},
-    {"name": "Kẻ Đu Dây Tơ Tằm (OC Spider)", "hp": 100, "atk": 14, "exp": 50, "yen": 800, "desc": "Đeo mặt nạ nhện, bay nhảy linh hoạt và bắn mạng làm chậm."},
-    {"name": "Cựu Yakuza Hoàn Lương (Dragon Style)", "hp": 180, "atk": 22, "exp": 90, "yen": 2500, "desc": "Mang hình xăm rồng sau lưng, cú đấm đầy uy lực."},
-    {"name": "Tên Cuồng Băng Nhóm Kamurocho", "hp": 140, "atk": 18, "exp": 70, "yen": 1800, "desc": "Cầm gậy bóng chày và cười điên loạn."},
-    {"name": "Kẻ Thù Dùng 'Stand' Ẩn Danh", "hp": 150, "atk": 20, "exp": 100, "yen": 2200, "desc": "Có một bóng hình bí ẩn triệu hồi đằng sau gánh chịu đòn đánh!"},
-    {"name": "Nữ Sinh Bị Yandere Thao Túng", "hp": 90, "atk": 16, "exp": 60, "yen": 1000, "desc": "Cầm dao rọc giấy với ánh mắt vô hồn, thì thầm những câu thơ kỳ quặc."}
-]
-
-@bot.command(name="profile")
-async def profile(ctx):
+# -------------------- HỆ THỐNG TRẬN ĐẤU & BOSS --------------------
+async def run_battle_engine(ctx, enemy_data, is_boss=False):
     p = get_player(ctx.author.id)
-    embed = discord.Embed(
-        title=f"📜 Bảng Chỉ Số: {ctx.author.display_name}",
-        color=discord.Color.gold()
-    )
-    embed.add_field(name="Cấp độ (Level)", value=f"Lv.{p['level']}", inline=True)
-    embed.add_field(name="Kinh nghiệm (EXP)", value=f"{p['exp']}/{p['level']*100}", inline=True)
-    embed.add_field(name="Số tiền (Yen)", value=f"¥{p['yen']:,}", inline=True)
-    embed.add_field(name="Máu tối đa (HP)", value=f"{p['hp_max']}", inline=True)
-    embed.add_field(name="Năng lượng (MP)", value=f"{p['mp_max']}", inline=True)
-    embed.add_field(name="Sức tấn công (ATK)", value=f"{p['atk']}", inline=True)
-    await ctx.send(embed=embed)
+    c_name, _ = get_player_clan(ctx.author.id)
 
-@bot.command(name="battle")
-async def start_battle(ctx):
-    p = get_player(ctx.author.id)
-    enemy_template = random.choice(ENEMIES)
+    # Scaling chỉ số quái theo level người chơi
+    scale = 1 + (p["level"] - 1) * 0.18
+    e_name = enemy_data["name"]
+    e_hp = int(enemy_data["hp"] * scale)
+    e_max_hp = e_hp
+    e_atk = int(enemy_data["atk"] * scale)
+    e_special = enemy_data.get("special", None)
+    demonking_healed = False
     
+    exp_reward = int(enemy_data["exp"] * (1 + (p["level"] - 1) * 0.12))
+    yen_reward = int(enemy_data["yen"] * (1 + (p["level"] - 1) * 0.15))
+
     p_hp = p["hp_max"]
     p_mp = p["mp_max"]
-    e_name = enemy_template["name"]
-    e_hp = enemy_template["hp"]
-    e_max_hp = enemy_template["hp"]
-    e_atk = enemy_template["atk"]
-    e_desc = enemy_template.get("desc", "")
-    
+    p_atk = p["atk"]
+
+    # Áp dụng hiệu ứng Trait nếu có
+    p_trait = p.get("trait")
+    trait_desc_msg = ""
+    dodge_chance = 0.0
+    lifesteal = False
+
+    if p_trait:
+        trait_desc_msg = f"\n🌀 **Trait Active:** {p_trait['name']}"
+        tid = p_trait["id"]
+        if tid == "godlike":
+            p_atk = int(p_atk * 1.5)
+            p_hp = int(p_hp * 1.3)
+        elif tid == "speedster":
+            dodge_chance = 0.20
+        elif tid == "vampiric":
+            lifesteal = True
+        elif tid == "fragile":
+            p_hp = int(p_hp * 0.75)
+        elif tid == "sluggish":
+            p_atk = int(p_atk * 0.9)
+
+    # Buff ATK nếu ở Clan
+    clan_bonus = 1.15 if c_name else 1.0
+    effective_atk = int(p_atk * clan_bonus)
+
     def check_msg(m):
         return m.author == ctx.author and m.channel == ctx.channel and m.content in ["1", "2", "3", "4"]
 
-    await ctx.send(f"⚔️ **MỘT TRẬN ĐẤU BẮT ĐẦU!**\nĐối thủ: **{e_name}**\n📝 *{e_desc}*\n(HP: {e_hp} | ATK: {e_atk})")
+    prefix = "🔥 **TRẬN ĐẤU BOSS SIÊU CẤP** 🔥" if is_boss else "⚔️ **BATTLE THƯỜNG**"
+    clan_msg = f"\n🛡️ *Buff Clan (+15% ATK) đang kích hoạt!*" if c_name else ""
+    await ctx.send(f"{prefix}\nĐối thủ: **{e_name}**\n📝 *{enemy_data.get('desc', '')}*{clan_msg}{trait_desc_msg}\n(HP: {e_hp} | ATK: {e_atk})")
 
     def battle_status(log_msg=""):
-        embed = discord.Embed(title=f"💥 {ctx.author.display_name} VS {e_name}", color=discord.Color.purple())
-        embed.add_field(name=f"👤 {ctx.author.display_name}", value=f"❤️ HP: {p_hp}/{p['hp_max']}\n🧪 MP: {p_mp}/{p['mp_max']}", inline=True)
+        color = discord.Color.red() if is_boss else discord.Color.purple()
+        embed = discord.Embed(title=f"💥 {ctx.author.display_name} VS {e_name}", color=color)
+        embed.add_field(name=f"👤 {ctx.author.display_name}", value=f"❤️ HP: {p_hp}/{p['hp_max']}\n🧪 MP: {p_mp}/{p['mp_max']}\n⚔️ ATK: {effective_atk}", inline=True)
         embed.add_field(name=f"👹 {e_name}", value=f"❤️ HP: {e_hp}/{e_max_hp}\n⚔️ ATK: {e_atk}", inline=True)
         embed.add_field(
             name="📋 Hành động của bạn:", 
-            value="`1` - Đấm thường\n`2` - Tuyệt kỹ Crossover (Tốn 15 MP)\n`3` - Hồi máu (Tốn 20 MP)\n`4` - Thủ thế (Giảm 50% sát thương)", 
+            value="`1` - Đấm thường\n`2` - Tuyệt kỹ Crossover (Tốn 15 MP)\n`3` - Hồi máu (Tốn 20 MP)\n`4` - Phòng thủ (Giảm 50% sát thương)", 
             inline=False
         )
         if log_msg:
             embed.set_footer(text=log_msg)
         return embed
 
-    is_defending = False
     status_msg = await ctx.send(embed=battle_status("Chọn lượt của bạn!"))
 
     while p_hp > 0 and e_hp > 0:
+        # Cơ chế Quickbullet: 25% tỷ lệ cướp lượt đánh trước
+        if e_special == "quickbullet" and random.random() < 0.25:
+            q_dmg = random.randint(e_atk - 2, e_atk + 5)
+            p_hp -= q_dmg
+            await ctx.send(f"⚡ **Quickbullet quá nhanh!** Cướp lượt và gây **{q_dmg} sát thương** trước khi bạn kịp phản ứng!")
+            if p_hp <= 0:
+                p_hp = 0
+                await status_msg.edit(embed=battle_status(f"💀 BẠN ĐÃ THẤT BẠI trước {e_name}..."))
+                break
+
         try:
             msg = await bot.wait_for("message", timeout=30.0, check=check_msg)
             action = msg.content
@@ -417,38 +532,49 @@ async def start_battle(ctx):
             p_action_log = ""
             is_defending = False
 
-            # Lượt người chơi
             if action == "1":
-                dmg = random.randint(p["atk"] - 3, p["atk"] + 5)
+                dmg = random.randint(effective_atk - 3, effective_atk + 5)
                 e_hp -= dmg
                 p_action_log = f"Bạn vung đấm vào {e_name} gây {dmg} sát thương!"
+                if lifesteal:
+                    heal_ls = int(dmg * 0.2)
+                    p_hp = min(p["hp_max"], p_hp + heal_ls)
+                    p_action_log += f" (Hút +{heal_ls} HP)"
             elif action == "2":
                 if p_mp >= 15:
                     p_mp -= 15
-                    dmg = random.randint(int(p["atk"] * 1.8), int(p["atk"] * 2.4))
+                    dmg = random.randint(int(effective_atk * 1.8), int(effective_atk * 2.5))
                     e_hp -= dmg
-                    p_action_log = f"🔥 Tuyệt kỹ Ora-Tiger Drop! Gây {dmg} sát thương cực bộc phát!"
+                    p_action_log = f"🔥 Tuyệt kỹ Crossover Bộc Phát! Gây {dmg} sát thương!"
+                    if lifesteal:
+                        heal_ls = int(dmg * 0.2)
+                        p_hp = min(p["hp_max"], p_hp + heal_ls)
+                        p_action_log += f" (Hút +{heal_ls} HP)"
                 else:
                     p_action_log = "Không đủ MP! Lượt bị trôi qua."
             elif action == "3":
                 if p_mp >= 20:
                     p_mp -= 20
-                    heal = random.randint(30, 50)
+                    heal = random.randint(35, 55)
                     p_hp = min(p["hp_max"], p_hp + heal)
-                    p_action_log = f"🥤 Bạn uống hộp sữa Stamina, hồi {heal} HP!"
+                    p_action_log = f"🥤 Bạn hồi {heal} HP!"
                 else:
                     p_action_log = "Không đủ MP! Lượt bị trôi qua."
             elif action == "4":
                 is_defending = True
-                p_action_log = "🛡️ Bạn tập trung phòng thủ, sẵn sàng chịu đòn!"
+                p_action_log = "🛡️ Bạn tập trung phòng thủ!"
 
-            # Kiểm tra kẻ thù bị hạ
+            # Cơ chế Demonking: Hồi 90% HP khi <= 15% HP
+            if e_special == "demonking" and not demonking_healed and (e_hp / e_max_hp) <= 0.15 and e_hp > 0:
+                heal_dk = int(e_max_hp * 0.9)
+                e_hp = min(e_max_hp, e_hp + heal_dk)
+                demonking_healed = True
+                p_action_log += f"\n👿 **Demonking kích hoạt Quỷ Sức! Hồi lại {heal_dk} HP!**"
+
             if e_hp <= 0:
                 e_hp = 0
-                exp_gained = enemy_template["exp"]
-                yen_gained = enemy_template["yen"]
-                p["exp"] += exp_gained
-                p["yen"] += yen_gained
+                p["exp"] += exp_reward
+                p["yen"] += yen_reward
                 
                 lvl_up_msg = ""
                 if p["exp"] >= p["level"] * 100:
@@ -457,30 +583,82 @@ async def start_battle(ctx):
                     p["hp_max"] += 20
                     p["mp_max"] += 10
                     p["atk"] += 5
-                    lvl_up_msg = f"\n🎉 **BẠN ĐÃ THĂNG CẤP LÊN Lv.{p['level']}!** (HP +20, MP +10, ATK +5)"
+                    lvl_up_msg = f"\n🎉 **THĂNG CẤP LÊN Lv.{p['level']}!** (Quái & Boss từ nay sẽ trâu hơn!)"
+
+                # Cơ chế rơi Trait khi hạ Boss (5% tỉ lệ)
+                trait_got_msg = ""
+                if is_boss and random.random() < 0.05:
+                    if random.random() < 0.75:
+                        selected_trait = random.choice(BUFF_TRAITS)
+                        trait_got_msg = f"\n✨ **BÁ ĐẠO!** Bạn hạ gục Boss và thức tỉnh Trait Xịn: **[{selected_trait['name']}]**! (*{selected_trait['desc']}*)"
+                    else:
+                        selected_trait = random.choice(CURSE_TRAITS)
+                        trait_got_msg = f"\n☠️ **LỜI NGUYỀN!** Bạn bị dính bùa chú từ Boss và nhận Trait Cản Trở: **[{selected_trait['name']}]**! (*{selected_trait['desc']}*)"
+                    
+                    p["trait"] = selected_trait
 
                 save_json(RPG_DATA_PATH, rpg_data)
-                await status_msg.edit(embed=battle_status(f"BẠN ĐÃ THẮNG! Nhận {exp_gained} EXP và ¥{yen_gained:,}{lvl_up_msg}"))
+                await status_msg.edit(embed=battle_status(f"🎉 BẠN ĐÃ CHIẾN THẮNG! Nhận {exp_reward} EXP và ¥{yen_reward:,}{lvl_up_msg}{trait_got_msg}"))
                 break
 
-            # Lượt kẻ thù tấn công
-            e_dmg = random.randint(e_atk - 2, e_atk + 5)
-            if is_defending:
-                e_dmg = int(e_dmg * 0.5)
-            
-            p_hp -= e_dmg
-            e_action_log = f"{e_name} phản công gây {e_dmg} sát thương!"
+            # Lượt kẻ thù
+            if dodge_chance > 0 and random.random() < dodge_chance:
+                e_action_log = f"⚡ **NÉ ĐÒN THẦN TỐC!** Bạn đã né hoàn toàn đòn đánh từ {e_name}!"
+            else:
+                e_dmg = random.randint(e_atk - 2, e_atk + 6)
+                if is_defending:
+                    e_dmg = int(e_dmg * 0.5)
+                p_hp -= e_dmg
+                e_action_log = f"{e_name} phản công gây {e_dmg} sát thương!"
 
             if p_hp <= 0:
                 p_hp = 0
-                await status_msg.edit(embed=battle_status(f"BẠN ĐÃ BỊ ĐẢ BẠI... Hãy rèn luyện thêm!"))
+                await status_msg.edit(embed=battle_status(f"💀 BẠN ĐÃ THẤT BẠI trước {e_name}... Hãy tăng sức mạnh và thử lại!"))
                 break
 
             await status_msg.edit(embed=battle_status(f"{p_action_log} | {e_action_log}"))
 
         except asyncio.TimeoutError:
-            await ctx.send("Quá thời gian lựa chọn! Trận đấu đã kết thúc.")
+            await ctx.send("Quá thời gian lựa chọn! Trận đấu kết thúc.")
             break
+
+@bot.command(name="battle")
+async def battle_command(ctx):
+    enemy = random.choice(REGULAR_ENEMIES)
+    await run_battle_engine(ctx, enemy, is_boss=False)
+
+@bot.command(name="Tboss")
+async def boss_command(ctx):
+    p = get_player(ctx.author.id)
+    if p["level"] < 5:
+        return await ctx.send("⚠️ **YÊU CẦU CẤP ĐỘ!** Bạn phải đạt **Level 5 trở lên** mới đủ sức khiêu chiến Boss SIÊU CẤP! Hãy luyện tập thêm ở `!battle`.")
+
+    boss = random.choice(BOSSES)
+    await run_battle_engine(ctx, boss, is_boss=True)
+
+@bot.command(name="profile")
+async def profile(ctx):
+    p = get_player(ctx.author.id)
+    c_name, _ = get_player_clan(ctx.author.id)
+    clan_str = f"🏰 **{c_name}** (+15% ATK)" if c_name else "Chưa có"
+    
+    trait_info = "Không có"
+    if p.get("trait"):
+        trait_info = f"🌀 **{p['trait']['name']}**\n*{p['trait']['desc']}*"
+
+    embed = discord.Embed(
+        title=f"📜 Bảng Chỉ Số: {ctx.author.display_name}",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="Cấp độ (Level)", value=f"Lv.{p['level']}", inline=True)
+    embed.add_field(name="Kinh nghiệm (EXP)", value=f"{p['exp']}/{p['level']*100}", inline=True)
+    embed.add_field(name="Số tiền (Yen)", value=f"¥{p['yen']:,}", inline=True)
+    embed.add_field(name="Máu tối đa (HP)", value=f"{p['hp_max']}", inline=True)
+    embed.add_field(name="Năng lượng (MP)", value=f"{p['mp_max']}", inline=True)
+    embed.add_field(name="Sức tấn công (ATK)", value=f"{p['atk']}", inline=True)
+    embed.add_field(name="Clan", value=clan_str, inline=False)
+    embed.add_field(name="Đặc tính (Trait)", value=trait_info, inline=False)
+    await ctx.send(embed=embed)
 
 # -------------------- CÁC LỆNH MODERATION & QUẢN TRỊ --------------------
 @bot.command(name="warn")
@@ -516,7 +694,7 @@ async def unmute_member(ctx, member: discord.Member):
 async def ban_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
     if not await is_authorized(ctx):
         return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    ok = await confirm_action(ctx, f"Cấm {member.mention} vì: {reason}")
+    ok = await confirm_action(ctx, ctx.author, f"Cấm {member.mention} vì: {reason}")
     if not ok:
         return
     try:
@@ -530,7 +708,7 @@ async def ban_member(ctx, member: discord.Member, *, reason: str = "Không rõ l
 async def kick_member(ctx, member: discord.Member, *, reason: str = "Không rõ lý do"):
     if not await is_authorized(ctx):
         return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    ok = await confirm_action(ctx, f"Đuổi {member.mention} vì: {reason}")
+    ok = await confirm_action(ctx, ctx.author, f"Đuổi {member.mention} vì: {reason}")
     if not ok:
         return
     try:
@@ -544,7 +722,7 @@ async def kick_member(ctx, member: discord.Member, *, reason: str = "Không rõ 
 async def purge_messages(ctx, amount: int = 10):
     if not await is_authorized(ctx):
         return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    ok = await confirm_action(ctx, f"Xóa {amount} tin nhắn trong kênh {ctx.channel.mention}")
+    ok = await confirm_action(ctx, ctx.author, f"Xóa {amount} tin nhắn trong kênh {ctx.channel.mention}")
     if not ok:
         return
     try:
@@ -552,79 +730,6 @@ async def purge_messages(ctx, amount: int = 10):
         await ctx.send(f"Đã xóa {len(deleted) - 1} tin nhắn.", delete_after=5)
     except Exception:
         await ctx.send("Không thể xóa nhiều tin nhắn.")
-
-@bot.command(name="create_channel")
-@commands.has_permissions(manage_channels=True)
-async def create_channel(ctx, *, name: str):
-    if not await is_authorized(ctx):
-        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    try:
-        channel = await ctx.guild.create_text_channel(name)
-        await ctx.send(f"Đã tạo kênh {channel.mention}.")
-    except Exception:
-        await ctx.send("Không thể tạo kênh.")
-
-@bot.command(name="give_role")
-@commands.has_permissions(manage_roles=True)
-async def give_role(ctx, member: discord.Member, *, role_name: str):
-    if not await is_authorized(ctx):
-        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    role = discord.utils.get(ctx.guild.roles, name=role_name)
-    if not role:
-        try:
-            role = await ctx.guild.create_role(name=role_name)
-        except Exception:
-            return await ctx.send("Không thể tạo role.")
-    try:
-        await member.add_roles(role)
-        await ctx.send(f"Đã gán role {role.name} cho {member.mention}.")
-    except Exception:
-        await ctx.send("Không thể gán role.")
-
-@bot.command(name="remove_role")
-@commands.has_permissions(manage_roles=True)
-async def remove_role(ctx, member: discord.Member, *, role_name: str):
-    if not await is_authorized(ctx):
-        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    role = discord.utils.get(ctx.guild.roles, name=role_name)
-    if not role:
-        return await ctx.send("Role không tồn tại.")
-    try:
-        await member.remove_roles(role)
-        await ctx.send(f"Đã gỡ role {role.name} khỏi {member.mention}.")
-    except Exception:
-        await ctx.send("Không thể gỡ role.")
-
-@bot.command(name="set_builder")
-@commands.has_permissions(manage_roles=True)
-async def set_builder(ctx, member: discord.Member):
-    if not await is_authorized(ctx):
-        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    role = discord.utils.get(ctx.guild.roles, name="Builder")
-    if not role:
-        try:
-            role = await ctx.guild.create_role(name="Builder")
-        except Exception:
-            return await ctx.send("Không thể tạo role Builder.")
-    try:
-        await member.add_roles(role)
-        await ctx.send(f"Đã gán Builder cho {member.mention}.")
-    except Exception:
-        await ctx.send("Không thể gán Builder.")
-
-@bot.command(name="remove_builder")
-@commands.has_permissions(manage_roles=True)
-async def remove_builder(ctx, member: discord.Member):
-    if not await is_authorized(ctx):
-        return await ctx.send("Bạn không có quyền thực hiện lệnh này.")
-    role = discord.utils.get(ctx.guild.roles, name="Builder")
-    if not role:
-        return await ctx.send("Role Builder chưa tồn tại.")
-    try:
-        await member.remove_roles(role)
-        await ctx.send(f"Đã gỡ Builder khỏi {member.mention}.")
-    except Exception:
-        await ctx.send("Không thể gỡ Builder.")
 
 # -------------------- COMMANDS AUTO-MODERATION --------------------
 @bot.command(name="mod_addword")
@@ -673,13 +778,12 @@ async def mod_toggle(ctx, mode: str):
     save_json(DATA_PATH, moderation_data)
     await ctx.send(f"Auto-moderation đã được đặt: {m.upper()}")
 
-# -------------------- LẮNG NGHE TIN NHẮN --------------------
+# -------------------- LẮNG NGHE TIN NHẮN & KHỞI ĐỘNG --------------------
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # Auto-moderation
     if message.guild and moderation_data.get("auto_mod", True):
         content_lower = (message.content or "").lower()
         for w in moderation_data.get("blacklist", []):
@@ -689,26 +793,21 @@ async def on_message(message):
                 except Exception:
                     pass
                 try:
-                    await message.channel.send(f"{message.author.mention}, tin nhắn của bạn chứa nội dung không phù hợp và đã bị xóa.")
+                    await message.channel.send(f"{message.author.mention}, tin nhắn chứa từ ngữ không phù hợp và đã bị xóa.")
                 except Exception:
                     pass
-                mod_log = discord.utils.get(message.guild.text_channels, name="mod-log")
-                if mod_log:
-                    await mod_log.send(f"Đã xóa tin của {message.author.mention} vì chứa `{w}`: {message.content}")
                 return
 
-    # Bị mention hoặc DM
     if bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
         if not message.content.startswith("!"):
             try:
-                await message.channel.send("Sử dụng lệnh `!Thelps` để xem hướng dẫn lệnh và trải nghiệm Turn-Based RPG.")
+                await message.channel.send("Sử dụng lệnh `!Thelps` để xem hướng dẫn chi tiết.")
             except Exception:
                 pass
             return
 
     await bot.process_commands(message)
 
-# -------------------- SỰ KIỆN KHỞI ĐỘNG --------------------
 @bot.event
 async def on_ready():
     logger.info(f"✅ Bot đã trực tuyến: {bot.user.name}")
