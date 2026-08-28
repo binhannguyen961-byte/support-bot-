@@ -1,3 +1,4 @@
+# -------------------- CẤU HÌNH & LOGGING --------------------
 import os
 import logging
 import asyncio
@@ -9,7 +10,6 @@ from flask import Flask
 from google import genai
 from google.genai import types
 
-# -------------------- CẤU HÌNH & LOGGING --------------------
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("true-architect")
 
@@ -31,6 +31,7 @@ def get_next_client():
         return None
     key = API_KEYS[key_index]
     key_index = (key_index + 1) % len(API_KEYS)
+    # Khởi tạo client trực tiếp với api_key chuẩn của SDK google-genai
     return genai.Client(api_key=key)
 
 # -------------------- WEB SERVER KEEPALIVE --------------------
@@ -56,20 +57,28 @@ ARCHITECT_INSTRUCTION = (
 # -------------------- HÀM GỌI GEMINI ĐA KEY --------------------
 async def call_gemini(contents, custom_instruction=None, temperature=0.2):
     if not API_KEYS:
+        logger.error("Không tìm thấy GEMINI_API_KEY nào trong biến môi trường!")
         return "Chưa cấu hình API Key nào trong hệ thống."
     
     instruction = custom_instruction if custom_instruction else ARCHITECT_INSTRUCTION
     cfg = types.GenerateContentConfig(system_instruction=instruction, temperature=temperature)
     model_name = "gemini-2.0-flash"
     
-    for _ in range(len(API_KEYS)):
+    for i in range(len(API_KEYS)):
         client = get_next_client()
+        if not client:
+            continue
+            
         try:
-            response = await client.aio.models.generate_content(model=model_name, contents=contents, config=cfg)
+            response = await client.aio.models.generate_content(
+                model=model_name, 
+                contents=contents, 
+                config=cfg
+            )
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            logger.warning(f"API Key gặp lỗi, chuyển key tiếp theo: {e}")
+            logger.warning(f"API Key thứ {i+1} gặp lỗi: {e}")
             continue
             
     return "Tất cả các API key đều đã cạn kiệt hạn ngạch hoặc gặp lỗi."
@@ -109,7 +118,7 @@ async def mute_member(ctx, member: discord.Member, minutes: int = 5):
         duration = timedelta(minutes=minutes)
         await member.timeout(duration, reason="Bị tạm khóa bởi True Architect")
         await ctx.send(f"Đã để {member.mention} chìm vào sự tĩnh lặng trong {minutes} phút.")
-    except Exception as e:
+    except Exception:
         await ctx.send(f"Không thể áp đặt sự tĩnh lặng lên {member.mention}, có thể do thiếu quyền hạn.")
 
 @bot.command(name="unmute")
@@ -118,13 +127,12 @@ async def unmute_member(ctx, member: discord.Member):
     try:
         await member.timeout(None, reason="Bỏ khóa bởi True Architect")
         await ctx.send(f"Đã trả lại giọng nói cho {member.mention}, sự tĩnh lặng đã kết thúc.")
-    except Exception as e:
+    except Exception:
         await ctx.send(f"Không thể gỡ bỏ sự tĩnh lặng cho {member.mention}.")
 
 @bot.command(name="code")
 async def code_architect(ctx, *, prompt: str):
     async with ctx.typing():
-        # Đè instruction để cho phép Gemini viết đoạn code Python đầy đủ
         code_instruction = "Bạn là một lập trình viên Python giỏi. Chỉ trả về mã Python hoàn chỉnh, sạch sẽ và tối ưu, không cần giải thích thêm."
         result = await call_gemini([f"Viết mã Python hoàn chỉnh cho: {prompt}"], custom_instruction=code_instruction)
         if result:
@@ -190,7 +198,6 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # Tự động xử lý tin nhắn riêng (DM) hoặc khi được Tag tên
     if bot.user.mentioned_in(message) or isinstance(message.channel, discord.DMChannel):
         if not message.content.startswith("!"):
             clean_content = message.content.replace(f"<@{bot.user.id}>", "").strip()
