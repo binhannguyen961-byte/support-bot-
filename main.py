@@ -165,10 +165,11 @@ BOSSES = [
     {"name": "Sentry (Marvel)", "hp": 1050, "atk": 85, "exp": 1500, "yen": 42000}
 ]
 
+# Đã giảm sức mạnh (giảm HP và ATK) của quái thường
 REGULAR_ENEMIES = [
-    {"name": "Quickbullet", "hp": 110, "atk": 15, "exp": 55, "yen": 1100},
-    {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 70, "atk": 8, "exp": 25, "yen": 400},
-    {"name": "Sát Thủ Passione", "hp": 130, "atk": 16, "exp": 60, "yen": 1200}
+    {"name": "Quickbullet", "hp": 85, "atk": 11, "exp": 45, "yen": 900},
+    {"name": "Gã Trộm Đồ Lặt Vặt Hẻm Nhỏ", "hp": 55, "atk": 6, "exp": 20, "yen": 300},
+    {"name": "Sát Thủ Passione", "hp": 100, "atk": 12, "exp": 50, "yen": 1000}
 ]
 
 def get_scaled_price(base_price, level):
@@ -196,7 +197,7 @@ async def thelps_command(ctx, category: str = "main"):
                 value=f"Trạng thái: **{status}**\nChỉ số: ATK ({atk_p}) | HP ({hp_p})\n*{sinfo['desc']}*",
                 inline=False
             )
-        embed.set_footer(text="Dùng lệnh: !Tstyle equip <mã_style> | !Tstyle unequip")
+        embed.set_footer(text="Dùng lệnh: !Tshop buy_style <mã_style> | !Tstyle unequip")
         return await ctx.send(embed=embed)
 
     elif cat in ["shop", "store"]:
@@ -206,13 +207,13 @@ async def thelps_command(ctx, category: str = "main"):
         style_summary = "\n".join([f"`{sid}` - {s['name']} : **¥{get_scaled_price(s['base_price'], p['level']):,}**" for sid, s in list(STYLES.items())[:5]])
         embed.add_field(name="🥊 MỘT SỐ UBG STYLES TIÊU BIỂU", value=style_summary + "\n*(Xem đầy đủ tại !Thelps style)*", inline=False)
         embed.add_field(name="🥤 VẬT PHẨM ĐẶC BIỆT", value="`stamina` - Sữa Stamina (¥300)\n`bento` - Hộp Bento (¥800)\n`mystery_box` - 🎁 Hộp Bí Ẩn Yên & EXP (¥2,500)", inline=False)
-        embed.set_footer(text="Dùng: !Tshop buy <mã> hoặc !Qshop để xem cửa hàng điểm Qpoint!")
+        embed.set_footer(text="Dùng: !Tshop buy <mã> hoặc !Tshop buy_style <mã> hoặc !Qshop!")
         return await ctx.send(embed=embed)
 
     else:
         embed = discord.Embed(
             title="🥊 TRUNG TÂM LỆNH SYSTEM (!Thelps)",
-            description="Chào Nam! Hệ thống lệnh phân loại đầy đủ tính năng RPG:",
+            description="Chào bạn! Hệ thống lệnh phân loại đầy đủ tính năng RPG:",
             color=discord.Color.blue()
         )
 
@@ -221,7 +222,8 @@ async def thelps_command(ctx, category: str = "main"):
             value=(
                 "`!Thelps style` : Xem toàn bộ danh sách Styles & giá mua theo Level.\n"
                 "`!Thelps shop` : Xem danh mục Cửa hàng.\n"
-                "`!profile` : Thẻ thông tin võ sĩ, chỉ số, Level, Qpoint & Clan."
+                "`!profile` : Thẻ thông tin võ sĩ, chỉ số, Level, Qpoint & Clan.\n"
+                "`!Tinventory` : Kiểm tra túi đồ vật phẩm cá nhân."
             ),
             inline=False
         )
@@ -229,9 +231,9 @@ async def thelps_command(ctx, category: str = "main"):
         embed.add_field(
             name="🎁 **HÀNG NGÀY & NHIỆM VỤ (NPC AN NGUYỄN)**",
             value=(
-                "`!daily` : Nhận quà điểm danh hằng ngày (Tỉ lệ theo Level).\n"
+                "`!daily` : Nhận quà điểm danh hằng ngày.\n"
                 "`!daily_quest` : Nhận & hoàn thành nhiệm vụ từ NPC An Nguyễn kiếm Qpoint.\n"
-                "`!Qshop` : Mở cửa hàng đổi thưởng bằng điểm Qpoint từ nhiệm vụ."
+                "`!Qshop` : Mở cửa hàng đổi thưởng bằng điểm Qpoint."
             ),
             inline=False
         )
@@ -239,10 +241,11 @@ async def thelps_command(ctx, category: str = "main"):
         embed.add_field(
             name="⚔️ **CHIẾN ĐẤU & GACHA**",
             value=(
-                "`!battle` : Đấu đường phố (Địch mạnh lên theo Level của bạn).\n"
+                "`!battle` : Đấu đường phố (Quái đã được giảm sức mạnh).\n"
                 "`!Tboss` : Khiêu chiến Boss thế giới (Level 5+).\n"
-                "`!Tshop buy <mã>` : Mua vật phẩm / Hộp bí ẩn bằng Yên.\n"
-                "`!Tuse <vật_phẩm>` : Dùng hộp bí ẩn, vé spin hoặc vật phẩm hồi máu."
+                "`!Tpvp @user <số_yen>` : Thách đấu PvP với người chơi khác.\n"
+                "`!Tshop buy <mã>` hoặc `!Tshop buy_style <mã>` : Mua vật phẩm hoặc Style.\n"
+                "`!Tuse <vật_phẩm>` : Sử dụng vật phẩm trong túi đồ."
             ),
             inline=False
         )
@@ -474,7 +477,7 @@ async def shop_command(ctx, action: str = None, item_code: str = None):
     p = get_player(ctx.author.id)
 
     if not action:
-        return await ctx.send("Vui lòng dùng `!Thelps shop` để xem danh sách mặt hàng, hoặc `!Tshop buy <mã>` để mua vật phẩm!")
+        return await ctx.send("Vui lòng dùng `!Thelps shop` để xem danh sách mặt hàng, hoặc `!Tshop buy <mã>` / `!Tshop buy_style <mã>`!")
 
     act = action.lower()
     if act == "buy":
@@ -499,7 +502,7 @@ async def shop_command(ctx, action: str = None, item_code: str = None):
         await ctx.send(f"🛍️ Mua thành công **1x {code}** với giá ¥{price:,} Yên!")
 
     elif act == "buy_style":
-        if not item_code: return await ctx.send("Nhập mã style muốn mua!")
+        if not item_code: return await ctx.send("Nhập mã style muốn mua! Ví dụ: `!Tshop buy_style out_boxer`")
         sid = item_code.lower()
         if sid not in STYLES: return await ctx.send("Mã style không tồn tại!")
         if sid in p.get("owned_styles", []): return await ctx.send("Bạn đã sở hữu style này rồi!")
@@ -574,8 +577,9 @@ async def use_item(ctx, item_code: str = None):
 
     if code == "mystery_box":
         lvl = p["level"]
-        yen_drop = random.randint(3000, 10000) * lvl
-        exp_drop = random.randint(500, 2000) * lvl
+        # Đã giảm phần thưởng nhận từ hộp bí ẩn
+        yen_drop = random.randint(1000, 4000) * lvl
+        exp_drop = random.randint(200, 800) * lvl
         p["yen"] += yen_drop
         p["exp"] += exp_drop
         leveled = check_level_up(p)
@@ -584,12 +588,132 @@ async def use_item(ctx, item_code: str = None):
         await ctx.send(f"🎁 **MỞ HỘP BÍ ẨN (Level {lvl})**\n🎉 Bạn nhận được: **¥{yen_drop:,} Yên** và **{exp_drop} EXP**!{lvl_str}")
 
     elif code == "lucky_spin":
-        val = random.randint(5000, 30000) * p["level"]
+        val = random.randint(3000, 15000) * p["level"]
         p["yen"] += val
         save_json(RPG_DATA_PATH, rpg_data)
         await ctx.send(f"🎰 **VÒNG QUAY NGẪU NHIÊN**\n🎉 Bạn nhận được: **¥{val:,} Yên**!")
     else:
         await ctx.send("Vật phẩm không thể sử dụng trực tiếp lúc này.")
+
+# -------------------- COMMAND: TINVENTORY --------------------
+@bot.command(name="Tinventory")
+async def tinventory(ctx):
+    p = get_player(ctx.author.id)
+    inv = p.get("inventory", {})
+    
+    embed = discord.Embed(title=f"🎒 TÚI ĐỒ CỦA {ctx.author.display_name.upper()}", color=discord.Color.blue())
+    
+    if not inv or all(qty <= 0 for qty in inv.values()):
+        embed.description = "Túi đồ của bạn hiện đang trống rỗng!"
+    else:
+        items_desc = ""
+        item_names = {
+            "mystery_box": "🎁 Hộp Bí Ẩn",
+            "lucky_spin": "🎟️ Vé Vòng Quay",
+            "stamina": "🥤 Sữa Stamina",
+            "bento": "🍱 Hộp Bento"
+        }
+        for k, v in inv.items():
+            if v > 0:
+                name = item_names.get(k, k.capitalize())
+                items_desc += f"- **{name}** (`{k}`) : `x{v}`\n"
+        embed.add_field(name="📦 VẬT PHẨM SỞ HỮU", value=items_desc, inline=False)
+        
+    embed.set_footer(text="Dùng lệnh !Tuse <mã_vật_phẩm> để sử dụng!")
+    await ctx.send(embed=embed)
+
+# -------------------- COMMAND: TSTYLE --------------------
+@bot.command(name="Tstyle")
+async def tstyle_command(ctx, action: str = None, style_id: str = None):
+    p = get_player(ctx.author.id)
+    if not action:
+        return await ctx.send("Dùng lệnh: `!Tstyle equip <mã_style>` hoặc `!Tstyle unequip`")
+
+    act = action.lower()
+    if act == "equip":
+        if not style_id: return await ctx.send("Nhập mã style muốn trang bị!")
+        sid = style_id.lower()
+        if sid not in STYLES: return await ctx.send("Mã style không tồn tại!")
+        if sid not in p.get("owned_styles", []): return await ctx.send("⚠️ Bạn chưa sở hữu style này! Hãy mua bằng `!Tshop buy_style <mã>`.")
+        
+        p["equipped_style"] = sid
+        save_json(RPG_DATA_PATH, rpg_data)
+        await ctx.send(f"⭐ Đã trang bị thành công UBG Style: **{STYLES[sid]['name']}**!")
+
+    elif act == "unequip":
+        p["equipped_style"] = None
+        save_json(RPG_DATA_PATH, rpg_data)
+        await ctx.send("🛡️ Đã tháo Style thành công.")
+
+# -------------------- COMMAND: TPVV (PVP) --------------------
+@bot.command(name="Tpvp")
+async def tpvp_command(ctx, opponent: discord.Member = None, bet_yen: int = 0):
+    if not opponent:
+        return await ctx.send("⚠️ Vui lòng tag người muốn thách đấu! Ví dụ: `!Tpvp @user 5000`")
+    if opponent.bot:
+        return x if (x := "⚠️ Không thể đấu với Bot!") else ctx.send(x)
+    if opponent == ctx.author:
+        return await ctx.send("⚠️ Bạn không thể tự đấu với chính mình!")
+
+    p1 = get_player(ctx.author.id)
+    p2 = get_player(opponent.id)
+
+    if bet_yen < 0:
+        return await ctx.send("⚠️ Số Yên cược không hợp lệ!")
+    if p1["yen"] < bet_yen:
+        return await ctx.send(f"❌ Bạn không đủ ¥{bet_yen:,} Yên để cược!")
+    if p2["yen"] < bet_yen:
+        return await ctx.send(f"❌ Đối thủ không đủ ¥{bet_yen:,} Yên để nhận cược!")
+
+    confirm_msg = await ctx.send(f"⚔️ {opponent.mention}, bạn nhận được lời thách đấu PvP từ **{ctx.author.display_name}** với mức cược **¥{bet_yen:,} Yên**!\nThả cảm xúc 👍 vào tin nhắn này trong 30 giây để chấp nhận chiến đấu!")
+    await confirm_msg.add_reaction("👍")
+
+    def check_reaction(reaction, user):
+        return user == opponent and str(reaction.emoji) == "👍" and reaction.message.id == confirm_msg.id
+
+    try:
+        await bot.wait_for("reaction_add", timeout=30.0, check=check_reaction)
+    except asyncio.TimeoutError:
+        return await ctx.send("⏳ Lời thách đấu PvP đã hết hạn do đối thủ không phản hồi.")
+
+    # Bắt đầu trận chiến PvP
+    p1["yen"] -= bet_yen
+    p2["yen"] -= bet_yen
+    save_json(RPG_DATA_PATH, rpg_data)
+
+    st1 = p1.get("equipped_style")
+    st2 = p2.get("equipped_style")
+    mod1 = STYLES[st1]["atk_mod"] if st1 and st1 in STYLES else 1.0
+    mod2 = STYLES[st2]["atk_mod"] if st2 and st2 in STYLES else 1.0
+
+    hp1 = int(p1["hp_max"] * (STYLES[st1]["hp_mod"] if st1 and st1 in STYLES else 1.0))
+    hp2 = int(p2["hp_max"] * (STYLES[st2]["hp_mod"] if st2 and st2 in STYLES else 1.0))
+    atk1 = int(p1["atk"] * mod1)
+    atk2 = int(p2["atk"] * mod2)
+
+    battle_log = f"🥊 **TRẬN CHIẾN PVP GIỮA {ctx.author.display_name.upper()} & {opponent.display_name.upper()}**\n\n"
+    
+    while hp1 > 0 and hp2 > 0:
+        dmg1 = random.randint(atk1 - 3, atk1 + 5)
+        hp2 -= dmg1
+        battle_log += f"🗡️ {ctx.author.display_name} tấn công gây **{dmg1}** sát thương (Còn lại: {max(0, hp2)} HP)\n"
+        if hp2 <= 0: break
+
+        dmg2 = random.randint(atk2 - 3, atk2 + 5)
+        hp1 -= dmg2
+        battle_log += f"🛡️ {opponent.display_name} phản công gây **{dmg2}** sát thương (Còn lại: {max(0, hp1)} HP)\n"
+
+    if hp1 > hp2:
+        winner, loser = ctx.author, opponent
+        p1["yen"] += bet_yen * 2
+        battle_log += f"\n🏆 **VINH QUANG THUỘC VỀ {winner.display_name}!** Nhận phần thưởng cược ¥{bet_yen * 2:,} Yên."
+    else:
+        winner, loser = opponent, ctx.author
+        p2["yen"] += bet_yen * 2
+        battle_log += f"\n🏆 **VINH QUANG THUỘC VỀ {winner.display_name}!** Nhận phần thưởng cược ¥{bet_yen * 2:,} Yên."
+
+    save_json(RPG_DATA_PATH, rpg_data)
+    await ctx.send(battle_log)
 
 # -------------------- COMMAND: PROFILE --------------------
 @bot.command(name="profile")
@@ -628,7 +752,7 @@ async def profile(ctx):
         inline=True
     )
 
-    embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh!")
+    embed.set_footer(text="Dùng lệnh !Thelps để xem danh sách lệnh hoặc !Tinventory xem túi đồ!")
     await ctx.send(embed=embed)
 
 # -------------------- COMMANDS CHIẾN ĐẤU --------------------
